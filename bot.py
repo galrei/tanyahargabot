@@ -424,6 +424,23 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 def main() -> None:
+    # Perbaikan untuk Python 3.10+ / 3.14 di Windows
+    # (mengatasi error: There is no current event loop)
+    import sys
+    if sys.platform.startswith("win"):
+        try:
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        except Exception:
+            pass
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError("loop closed")
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))

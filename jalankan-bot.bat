@@ -17,8 +17,11 @@ if not exist ".env" (
     exit /b
 )
 
+echo Mengecek versi Python...
+python --version
+echo.
 echo Menginstall library yang dibutuhkan...
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt --quiet
 echo.
 echo Menjalankan bot...
 echo Jangan tutup jendela ini supaya bot tetap hidup.

@@ -94,7 +94,7 @@ def baca_genesis() -> Optional[Dict[str, Any]]:
         # Coba JSON dulu
         if text.startswith("{"):
             data = json.loads(text)
-            data["_source"] = f"Genesis EA ({path.name})"
+            data["_source"] = f"Genesis EA (kebun saldo)"
             data["_file"] = str(path)
             return data
 
@@ -111,7 +111,7 @@ def baca_genesis() -> Optional[Dict[str, Any]]:
                 except ValueError:
                     data[k] = v
         if data:
-            data["_source"] = f"Genesis EA ({path.name})"
+            data["_source"] = f"Genesis EA (kebun saldo)"
             data["_file"] = str(path)
             return data
     except Exception as e:

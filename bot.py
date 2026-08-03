@@ -317,21 +317,28 @@ def format_harga(data: Dict[str, Any]) -> str:
     else:
         change_str = "-"
 
+    # Sumber tampilan: ganti nama file jadi "kebun saldo"
+    src_label = data.get("source", "-")
+    if src_label and "genesis_data" in str(src_label).lower():
+        src_label = "Genesis EA (kebun saldo)"
+    elif src_label and "Genesis EA" in str(src_label):
+        src_label = "Genesis EA (kebun saldo)"
+
     lines = [
         "💰 <b>Harga Gold (XAUUSD)</b>",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"Harga sekarang : <b>${data['price']:,.2f}</b>",
+        f"Harga sekarang/Inti : <b>${data['price']:,.2f}</b>",
     ]
     if data.get("open") is not None:
-        lines.append(f"Open           : ${data['open']:,.2f}")
+        lines.append(f"Awal                : ${data['open']:,.2f}")
     if data.get("high") is not None:
-        lines.append(f"High           : ${data['high']:,.2f}")
+        lines.append(f"Tinggi              : ${data['high']:,.2f}")
     if data.get("low") is not None:
-        lines.append(f"Low            : ${data['low']:,.2f}")
-    lines.append(f"Perubahan      : {change_str}")
+        lines.append(f"Rendah              : ${data['low']:,.2f}")
+    lines.append(f"Perubahan           : {change_str}")
     lines.append("━━━━━━━━━━━━━━━━━━━━")
     lines.append(f"🕐 {_h(data.get('time', '-'))}")
-    lines.append(f"📡 {_h(data.get('source', '-'))}")
+    lines.append(f"📡 {_h(src_label)}")
     return "\n".join(lines)
 
 
@@ -454,9 +461,16 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
     bid = num(data.get("bid") or raw.get("bid"))
     ask = num(data.get("ask") or raw.get("ask"))
     spread = raw.get("spread") if raw.get("spread") is not None else data.get("spread")
-    tf = _h(raw.get("timeframe") or "-")
+    # PERIOD_M1 → M1
+    tf_raw = str(raw.get("timeframe") or "-")
+    if tf_raw.startswith("PERIOD_"):
+        tf_raw = tf_raw.replace("PERIOD_", "", 1)
+    tf = _h(tf_raw)
     waktu = _h(data.get("time") or raw.get("time") or "-")
-    sumber = _h(data.get("source") or "EA GT")
+    sumber_raw = data.get("source") or "Genesis EA (kebun saldo)"
+    if "genesis_data" in str(sumber_raw).lower() or "Genesis EA" in str(sumber_raw):
+        sumber_raw = "Genesis EA (kebun saldo)"
+    sumber = _h(sumber_raw)
 
     balance = raw.get("balance")
     equity = raw.get("equity")
@@ -493,8 +507,8 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
         f"Bid/Ask : ${bid} / ${ask}\n"
         f"Spread  : {spread if spread is not None else '-'}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"<b>Riwayat Angka Faktual</b>\n"
-        f"<i>Atas/Bawah/Neto/Jangkau = poin</i>\n"
+        f"<b>Genesis Riwayat Angka Faktual Informasi Keuangan</b>\n"
+        f"<i>Tinggi · Atas · Bawah · Rendah · Awal · Neto · Inti · Jangkauan</i>\n"
         f"<pre>{table}</pre>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"<b>Posisi &amp; Akun</b>\n"

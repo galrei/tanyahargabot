@@ -86,6 +86,26 @@ def tombol_aksi() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
+
+
+def _h(text) -> str:
+    """Escape HTML untuk teks dinamis (aman di parse_mode HTML)."""
+    if text is None:
+        return "-"
+    s = str(text)
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _md(text: str) -> str:
+    """Escape karakter yang merusak Telegram Markdown legacy."""
+    if text is None:
+        return "-"
+    s = str(text)
+    for ch in ("_", "*", "`", "["):
+        s = s.replace(ch, "\\" + ch)
+    return s
+
+
 # ==================== DATA HARGA ====================
 
 async def _fetch_data(timeout: float = 12.0) -> Dict[str, Any]:
@@ -266,7 +286,7 @@ def buat_sinyal(data: Dict[str, Any]) -> str:
         sinyal = "🟠 WAIT / SIDEWAYS"
         alasan = "Arah belum jelas. Tunggu breakout atau konfirmasi lebih kuat."
 
-    return f"**Sinyal:** {sinyal}\n\n{alasan}"
+    return f"<b>Sinyal:</b> {sinyal}\n\n{alasan}"
 
 
 def get_isu() -> str:
@@ -298,9 +318,9 @@ def format_harga(data: Dict[str, Any]) -> str:
         change_str = "-"
 
     lines = [
-        "💰 *Harga Gold (XAUUSD)*",
+        "💰 <b>Harga Gold (XAUUSD)</b>",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"Harga sekarang : *${data['price']:,.2f}*",
+        f"Harga sekarang : <b>${data['price']:,.2f}</b>",
     ]
     if data.get("open") is not None:
         lines.append(f"Open           : ${data['open']:,.2f}")
@@ -310,8 +330,8 @@ def format_harga(data: Dict[str, Any]) -> str:
         lines.append(f"Low            : ${data['low']:,.2f}")
     lines.append(f"Perubahan      : {change_str}")
     lines.append("━━━━━━━━━━━━━━━━━━━━")
-    lines.append(f"🕐 {data.get('time', '-')}")
-    lines.append(f"📡 {data.get('source', '-')}")
+    lines.append(f"🕐 {_h(data.get('time', '-'))}")
+    lines.append(f"📡 {_h(data.get('source', '-'))}")
     return "\n".join(lines)
 
 
@@ -322,15 +342,15 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
 
     if not data.get("from_mt5") and not data.get("raw"):
         return (
-            "🏦 *MT5 / Genesis*\n"
+            "🏦 <b>MT5 / Genesis</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             "❌ Belum ada data dari EA Genesis / MT5.\n\n"
-            "*Cek langkah ini:*\n"
+            "<b>Cek langkah ini:</b>\n"
             "1. EA gt.mq5 sudah di-compile & aktif di chart\n"
             "2. File terbentuk di:\n"
-            "   `%APPDATA%\\MetaQuotes\\Terminal\\Common\\Files\\genesis_data.json`\n"
+            "   <code>%APPDATA%/MetaQuotes/Terminal/Common/Files/genesis_data.json</code>\n"
             "3. Restart bot setelah file ada\n\n"
-            "Sementara menu *Harga Aktual* memakai Yahoo Finance."
+            "Sementara menu <b>Harga Aktual</b> memakai Yahoo Finance."
         )
 
     def f(v):
@@ -342,10 +362,10 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
             return str(v)
 
     lines = [
-        "🏦 *Data Faktual MT5 / Genesis*",
+        "🏦 <b>Data Faktual MT5 / Genesis</b>",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"Simbol     : {data.get('symbol', 'XAUUSD')}",
-        f"Harga      : *{f(data.get('price'))}*",
+        f"Simbol     : {_h(data.get('symbol', 'XAUUSD'))}",
+        f"Harga      : <b>{f(data.get('price'))}</b>",
     ]
     if data.get("bid") is not None:
         lines.append(f"Bid        : {f(data.get('bid'))}")
@@ -355,7 +375,7 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
         lines.append(f"Spread     : {data.get('spread')}")
 
     lines.append("━━━━━━━━━━━━━━━━━━━━")
-    lines.append("*Riwayat Angka Faktual*")
+    lines.append("<b>Riwayat Angka Faktual</b>")
     lines.append(f"Awal       : {f(data.get('awal') or data.get('open'))}")
     lines.append(f"Tinggi     : {f(data.get('tinggi') or data.get('high'))}")
     lines.append(f"Bawah      : {f(data.get('bawah') or data.get('low'))}")
@@ -374,15 +394,15 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
     for k, v in raw.items():
         if k.lower() in skip or k.startswith("_"):
             continue
-        extra.append(f"{k.capitalize():12}: {v}")
+        extra.append(f"{_h(str(k).capitalize()):12}: {_h(v)}")
     if extra:
         lines.append("━━━━━━━━━━━━━━━━━━━━")
-        lines.append("*Info tambahan Genesis*")
+        lines.append("<b>Info tambahan Genesis</b>")
         lines.extend(extra[:12])  # batasi biar tidak kepanjangan
 
     lines.append("━━━━━━━━━━━━━━━━━━━━")
-    lines.append(f"🕐 {data.get('time', '-')}")
-    lines.append(f"📡 {data.get('source', 'MT5/Genesis')}")
+    lines.append(f"🕐 {_h(data.get('time', '-'))}")
+    lines.append(f"📡 {_h(data.get('source', 'MT5/Genesis'))}")
     return "\n".join(lines)
 
 
@@ -390,14 +410,14 @@ def format_tren(data: Dict[str, Any]) -> str:
     if data.get("error"):
         return f"❌ {data['error']}"
     return (
-        f"📈 *Analisis Tren Gold*\n"
+        f"📈 <b>Analisis Tren Gold</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"Harga   : *${data['price']:,.2f}*\n"
-        f"Tren    : *{data['trend']}*\n"
+        f"Harga   : <b>${data['price']:,.2f}</b>\n"
+        f"Tren    : <b>{data['trend']}</b>\n"
         f"Keterangan : {data['trend_desc']}\n"
         f"Perubahan  : {data['change']:+.2f} ({data['change_pct']:+.3f}%)\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"_Berdasarkan Moving Average periode pendek vs panjang._"
+        f"<i>Berdasarkan Moving Average periode pendek vs panjang.</i>"
     )
 
 
@@ -406,13 +426,13 @@ def format_sinyal(data: Dict[str, Any]) -> str:
         return f"❌ {data['error']}"
     sinyal_text = buat_sinyal(data)
     return (
-        f"🎯 *Sinyal Trading Gold*\n"
+        f"🎯 <b>Sinyal Trading Gold</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"Harga : *${data['price']:,.2f}*\n"
+        f"Harga : <b>${data['price']:,.2f}</b>\n"
         f"Tren  : {data['trend']}\n\n"
         f"{sinyal_text}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚠️ _Bukan saran finansial. Gunakan risk management._"
+        f"⚠️ <i>Bukan saran finansial. Gunakan risk management.</i>"
     )
 
 
@@ -424,48 +444,60 @@ def format_sr(data: Dict[str, Any]) -> str:
     res = data["resistance"]
     mid = data["mid"]
     return (
-        f"📊 *Support & Resistance*\n"
+        f"📊 <b>Support & Resistance</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"Harga sekarang : *${price:,.2f}*\n\n"
-        f"🔴 Resistance  : *${res:,.2f}*\n"
+        f"Harga sekarang : <b>${price:,.2f}</b>\n\n"
+        f"🔴 Resistance  : <b>${res:,.2f}</b>\n"
         f"   Jarak       : {((res - price) / price * 100):+.2f}%\n\n"
         f"⚪ Midpoint    : ${mid:,.2f}\n\n"
-        f"🟢 Support     : *${sup:,.2f}*\n"
+        f"🟢 Support     : <b>${sup:,.2f}</b>\n"
         f"   Jarak       : {((price - sup) / price * 100):+.2f}%\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"_Dihitung dari high/low 48 candle terakhir._"
+        f"<i>Dihitung dari high/low 48 candle terakhir.</i>"
     )
 
 
 def format_isu() -> str:
     return (
-        f"📰 *Isu & Rumor yang Perlu Diperhatikan*\n"
+        f"📰 <b>Isu & Rumor yang Perlu Diperhatikan</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{get_isu()}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"_Selalu cross-check dengan sumber berita resmi._"
+        f"<i>Selalu cross-check dengan sumber berita resmi.</i>"
     )
 
 
 def format_full(data: Dict[str, Any]) -> str:
     if data.get("error"):
-        return f"❌ {data['error']}"
+        return f"❌ {_h(data['error'])}"
     sinyal_text = buat_sinyal(data)
+    def n(v, fmt="{:,.2f}"):
+        if v is None:
+            return "-"
+        try:
+            return fmt.format(float(v))
+        except Exception:
+            return str(v)
+    ch = data.get("change")
+    cp = data.get("change_pct")
+    ch_str = f"{ch:+.2f}" if ch is not None else "-"
+    if cp is not None:
+        ch_str += f" ({cp:+.3f}%)"
     return (
-        f"📋 *Ringkasan Lengkap Gold (XAUUSD)*\n"
+        f"📋 <b>Ringkasan Lengkap Gold (XAUUSD)</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"💰 Harga  : *${data['price']:,.2f}*\n"
-        f"   Open   : ${data['open']:,.2f}\n"
-        f"   High   : ${data['high']:,.2f}\n"
-        f"   Low    : ${data['low']:,.2f}\n"
-        f"   Change : {data['change']:+.2f} ({data['change_pct']:+.3f}%)\n\n"
-        f"📈 Tren   : *{data['trend']}*\n"
-        f"   {data['trend_desc']}\n\n"
+        f"💰 Harga  : <b>${n(data.get('price'))}</b>\n"
+        f"   Open   : ${n(data.get('open'))}\n"
+        f"   High   : ${n(data.get('high'))}\n"
+        f"   Low    : ${n(data.get('low'))}\n"
+        f"   Change : {ch_str}\n\n"
+        f"📈 Tren   : <b>{_h(data.get('trend'))}</b>\n"
+        f"   {_h(data.get('trend_desc'))}\n\n"
         f"📊 S/R\n"
-        f"   Resistance : ${data['resistance']:,.2f}\n"
-        f"   Support    : ${data['support']:,.2f}\n\n"
+        f"   Resistance : ${n(data.get('resistance'))}\n"
+        f"   Support    : ${n(data.get('support'))}\n\n"
         f"{sinyal_text}\n\n"
-        f"🕐 {data['time']}\n"
+        f"🕐 {_h(data.get('time'))}\n"
         f"⚠️ Bukan saran finansial."
     )
 
@@ -475,8 +507,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     nama = user.first_name or "Trader"
     text = (
-        f"Halo *{nama}*! 👋\n\n"
-        f"Saya *TanyaHargaBot* — temanmu untuk pantau harga *Gold (XAUUSD)*.\n\n"
+        f"Halo <b>{nama}</b>! 👋\n\n"
+        f"Saya <b>TanyaHargaBot</b> — temanmu untuk pantau harga <b>Gold (XAUUSD)</b>.\n\n"
         f"Pilih menu di bawah:\n"
         f"• 💰 Harga Aktual\n"
         f"• 🏦 MT5 / Genesis (data faktual broker + EA)\n"
@@ -489,30 +521,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
     await update.message.reply_text(
         text,
-        parse_mode="Markdown",
+        parse_mode="HTML",
         reply_markup=menu_utama(),
     )
 
 
 async def bantuan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (
-        "❓ *Bantuan TanyaHargaBot*\n"
+        "❓ <b>Bantuan TanyaHargaBot</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        "*Menu yang tersedia:*\n"
-        "💰 *Harga Aktual* — Harga live + OHLC\n"
-        "📈 *Tren* — Arah pasar (bullish/bearish/sideways)\n"
-        "🎯 *Sinyal* — Ide entry sederhana + SL/TP\n"
-        "📊 *Support / Resistance* — Level penting\n"
-        "📰 *Isu & Rumor* — Faktor yang sering gerakkan harga\n"
-        "📋 *Ringkasan Lengkap* — Semua info sekaligus\n\n"
-        "*Perintah teks:*\n"
-        "`/start` `/harga` `/tren` `/sinyal` `/sr` `/isu` `/full` `/help`\n\n"
+        "<b>Menu yang tersedia:</b>\n"
+        "💰 <b>Harga Aktual</b> — Harga live + OHLC\n"
+        "📈 <b>Tren</b> — Arah pasar (bullish/bearish/sideways)\n"
+        "🎯 <b>Sinyal</b> — Ide entry sederhana + SL/TP\n"
+        "📊 <b>Support / Resistance</b> — Level penting\n"
+        "📰 <b>Isu & Rumor</b> — Faktor yang sering gerakkan harga\n"
+        "📋 <b>Ringkasan Lengkap</b> — Semua info sekaligus\n\n"
+        "<b>Perintah teks:</b>\n"
+        "<code>/start /harga /tren /sinyal /sr /isu /full /help</code>\n\n"
         "Data dari Yahoo Finance (mendekati harga MT5).\n"
         "⚠️ Bukan saran finansial. Selalu pakai risk management."
     )
     await update.message.reply_text(
         text,
-        parse_mode="Markdown",
+        parse_mode="HTML",
         reply_markup=menu_utama(),
     )
 
@@ -521,7 +553,7 @@ async def kirim_harga(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     msg = await update.message.reply_text("⏳ Mengambil harga gold...")
     try:
         data = await _fetch_data(12)
-        await msg.edit_text(format_harga(data), parse_mode="Markdown", reply_markup=tombol_aksi())
+        await msg.edit_text(format_harga(data), parse_mode="HTML", reply_markup=tombol_aksi())
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}", reply_markup=tombol_aksi())
 
@@ -530,7 +562,7 @@ async def kirim_tren(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     msg = await update.message.reply_text("⏳ Menganalisis tren...")
     try:
         data = await _fetch_data(12)
-        await msg.edit_text(format_tren(data), parse_mode="Markdown", reply_markup=tombol_aksi())
+        await msg.edit_text(format_tren(data), parse_mode="HTML", reply_markup=tombol_aksi())
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}", reply_markup=tombol_aksi())
 
@@ -539,7 +571,7 @@ async def kirim_sinyal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     msg = await update.message.reply_text("⏳ Menyusun sinyal...")
     try:
         data = await _fetch_data(12)
-        await msg.edit_text(format_sinyal(data), parse_mode="Markdown", reply_markup=tombol_aksi())
+        await msg.edit_text(format_sinyal(data), parse_mode="HTML", reply_markup=tombol_aksi())
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}", reply_markup=tombol_aksi())
 
@@ -548,7 +580,7 @@ async def kirim_sr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = await update.message.reply_text("⏳ Menghitung Support & Resistance...")
     try:
         data = await _fetch_data(12)
-        await msg.edit_text(format_sr(data), parse_mode="Markdown", reply_markup=tombol_aksi())
+        await msg.edit_text(format_sr(data), parse_mode="HTML", reply_markup=tombol_aksi())
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}", reply_markup=tombol_aksi())
 
@@ -556,7 +588,7 @@ async def kirim_sr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def kirim_isu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         format_isu(),
-        parse_mode="Markdown",
+        parse_mode="HTML",
         reply_markup=tombol_aksi(),
     )
 
@@ -565,7 +597,7 @@ async def kirim_full(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     msg = await update.message.reply_text("⏳ Menyusun ringkasan lengkap...")
     try:
         data = await _fetch_data(12)
-        await msg.edit_text(format_full(data), parse_mode="Markdown", reply_markup=tombol_aksi())
+        await msg.edit_text(format_full(data), parse_mode="HTML", reply_markup=tombol_aksi())
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}", reply_markup=tombol_aksi())
 
@@ -574,7 +606,7 @@ async def kirim_mt5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = await update.message.reply_text("⏳ Mengambil data MT5 / Genesis...")
     try:
         data = await _fetch_data(8)
-        await msg.edit_text(format_mt5_genesis(data), parse_mode="Markdown", reply_markup=tombol_aksi())
+        await msg.edit_text(format_mt5_genesis(data), parse_mode="HTML", reply_markup=tombol_aksi())
     except Exception as e:
         await msg.edit_text(f"❌ Gagal: {e}", reply_markup=tombol_aksi())
 
@@ -609,7 +641,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             else:
                 text = "Perintah tidak dikenali."
 
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=tombol_aksi())
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=tombol_aksi())
     except Exception as e:
         try:
             await query.edit_message_text(f"❌ Gagal memproses: {e}", reply_markup=tombol_aksi())

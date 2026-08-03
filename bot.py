@@ -171,7 +171,7 @@ def get_gold_data() -> Dict[str, Any]:
                     "spread": mt5d.get("spread"),
                     "neto": mt5d.get("neto"),
                     "inti": mt5d.get("inti"),
-                    "jangkauan": mt5d.get("jangkauan"),
+                    "julat": mt5d.get("julat"),
                     "tinggi": mt5d.get("tinggi") or high,
                     "bawah": mt5d.get("bawah") or low,
                     "awal": mt5d.get("awal") or open_p,
@@ -234,7 +234,7 @@ def get_gold_data() -> Dict[str, Any]:
             "mid": round(mid, 2),
             "neto": round(change, 2),
             "inti": round(mid, 2),
-            "jangkauan": round(high - low, 2),
+            "julat": round(high - low, 2),
             "tinggi": round(high, 2),
             "bawah": round(low, 2),
             "awal": round(open_p, 2),
@@ -410,7 +410,7 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
     live_low = data.get("bawah") or data.get("low") or raw.get("low")
     live_close = data.get("inti") or data.get("close") or raw.get("close")
     live_neto = data.get("neto") if data.get("neto") is not None else raw.get("neto")
-    live_range = data.get("jangkauan") if data.get("jangkauan") is not None else raw.get("jangkauan")
+    live_range = data.get("julat") if data.get("julat") is not None else raw.get("julat")
 
     # Atas/Bawah LIVE: pakai ch/cl dari EA jika ada, else hitung
     live_atas = raw.get("ch")
@@ -453,7 +453,7 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
     rows.append(f"Awal    {col(gt3.get('open'))} {col(gt2.get('open'))} {col(gt1.get('open'))} {col(live_open)}")
     rows.append(f"Neto    {col_pts(gt3.get('neto'))} {col_pts(gt2.get('neto'))} {col_pts(gt1.get('neto'))} {col_pts(live_neto)}")
     rows.append(f"Inti    {col(gt3.get('close'))} {col(gt2.get('close'))} {col(gt1.get('close'))} {col(live_close)}")
-    rows.append(f"Jangkau {col_pts(gt3.get('jangkauan'))} {col_pts(gt2.get('jangkauan'))} {col_pts(gt1.get('jangkauan'))} {col_pts(live_range)}")
+    rows.append(f"Julat   {col_pts(gt3.get('julat'))} {col_pts(gt2.get('julat'))} {col_pts(gt1.get('julat'))} {col_pts(live_range)}")
     table = "\n".join(rows)
 
     simbol = _h(data.get("symbol") or raw.get("symbol") or "XAUUSD")
@@ -508,7 +508,7 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
         f"Spread  : {spread if spread is not None else '-'}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"<b>Genesis Riwayat Angka Faktual Informasi Keuangan</b>\n"
-        f"<i>Tinggi · Atas · Bawah · Rendah · Awal · Neto · Inti · Jangkauan</i>\n"
+        f"<i>Tinggi · Atas · Bawah · Rendah · Awal · Neto · Inti · Julat</i>\n"
         f"<pre>{table}</pre>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"<b>Posisi &amp; Akun</b>\n"
@@ -577,7 +577,7 @@ def format_sr(data: Dict[str, Any]) -> str:
         f"🟢 Support     : <b>${sup:,.2f}</b>\n"
         f"   Jarak       : {((price - sup) / price * 100):+.2f}%\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"<i>Dihitung dari high/low 48 candle terakhir.</i>"
+        f"<i>Dihitung dari high/low 48 GT terakhir.</i>"
     )
 
 
@@ -655,7 +655,7 @@ async def bantuan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "❓ <b>Bantuan TanyaHargaBot</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         "<b>Menu yang tersedia:</b>\n"
-        "💰 <b>Harga Aktual</b> — Harga live + OHLC\n"
+        "💰 <b>Harga Aktual</b> — Harga live + TABRANIJ\n"
         "📈 <b>Tren</b> — Arah pasar (bullish/bearish/sideways)\n"
         "🎯 <b>Sinyal</b> — Ide entry sederhana + SL/TP\n"
         "📊 <b>Support / Resistance</b> — Level penting\n"

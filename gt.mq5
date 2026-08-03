@@ -516,7 +516,7 @@ void CreateAboutTab(int y)
    lineY += 50;
    CreateRect(PREFIX + "Ab_Box",    contentX, lineY, contentW, 100, gClrBg, clrSilver);
    CreateLabel(PREFIX + "Ab_Status",  contentX + 10, lineY + 10, "STATUS SISTEM: OPERASIONAL",                     gClrSuccess, 9);
-   CreateLabel(PREFIX + "Ab_Lince",   contentX + 10, lineY + 30, "License: RINGIN BAMBU Juli 2026",                clrSilver,   8);
+   CreateLabel(PREFIX + "Ab_Lince",   contentX + 10, lineY + 30, "License: KEBUN SALDO Agustus 2026",                clrSilver,   8);
    CreateLabel(PREFIX + "Ab_Support", contentX + 10, lineY + 70, "Support: mql5.com/getbos | t.me/jackmusk",   gClrAccent,  8);
 }
 
@@ -698,7 +698,7 @@ void UpdateInfoSection()
       plColor = gClrSuccess;
       if(buyLots > 0 || sellLots > 0)
          plStr = (pointValueTotal > 0) ? StringFormat("▲ +%.2f (+%d pts)", symbolPL, (int)MathRound(ptsFloating))
-                                       : StringFormat("▲ +%.2f (Hedged)", symbolPL);
+                                       : StringFormat("▲ +%.2f (Terkunci)", symbolPL);
       else
          plStr = StringFormat("▲ +%.2f (0 pts)", symbolPL);
    }
@@ -707,7 +707,7 @@ void UpdateInfoSection()
       plColor = gClrDanger;
       if(buyLots > 0 || sellLots > 0)
          plStr = (pointValueTotal > 0) ? StringFormat("▼ %.2f (%d pts)", symbolPL, (int)MathRound(ptsFloating))
-                                       : StringFormat("▼ %.2f (Hedged)", symbolPL);
+                                       : StringFormat("▼ %.2f (Terkunci)", symbolPL);
       else
          plStr = StringFormat("▼ %.2f (0 pts)", symbolPL);
    }
@@ -761,8 +761,8 @@ void UpdateInfoSection()
          }
          else
          {
-            ptsToSOStr      = "Hedged";
-            stopOutPriceStr = "Hedged";
+            ptsToSOStr      = "Terkunci";
+            stopOutPriceStr = "Terkunci";
          }
       }
    }

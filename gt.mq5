@@ -7,7 +7,7 @@
 #property link        "https://cindo.pages.dev"
 #property version     "1.00"
 #property description "EA GT Pesaldo - Komando Profit & Keamanan"
-#property description "========================================================"
+#property description "================================="
 #property description "EA Perdagangan ini beroperasi berdasarkan Sinyal GT Besar."
 #property description "Didesain spesifik untuk volatilitas tinggi (BTCUSD, XAUUSD, GOLDmicro)."
 
@@ -32,20 +32,20 @@ enum ENUM_THEME
 //+------------------------------------------------------------------+
 
 //--- System Information
-input string          _s0                  = "=========== EA GT PESALDO ==========="; 
-sinput string         Info_System          = "EA GT Pesaldo "; 
+input string          _s0                  = "=========== EA PESALDO ==========="; 
+sinput string         Info_System          = "EA Pesaldo "; 
 sinput string         Info_Version         = "v0.01 [Grafik Tabranij]"; 
 sinput string         Info_Author          = "MOCHAMAD TABRANI";                  
 sinput string         Info_Support         = "cindo.pages.dev";   
 
 //--- Dashboard Layout
-input string          _s1                  = "=========== DASHBOARD GEOMETRY ===========";
+input string          _s1                  = "======== DASHBOARD GEOMETRY ========";
 input int             X_Offset             = 20;       // Horizontal Offset (Pixels)
 input int             Y_Offset             = 40;       // Vertical Offset (Pixels)
 input int             Panel_Width          = 600;      // Total Dashboard Width
 
 //--- Trading Engine Settings
-input string          _s2                  = "=========== GRAFIK TABRANIJ ALGO STRATEGY ===========";
+input string          _s2                  = "======== GRAFIK TABRANIJ ALGO STRATEGY ========";
 input ENUM_TIMEFRAMES InpGTTimeframe       = PERIOD_H1;     // GT Besar Timeframe/durasi (Signal Basis)
 input double          InpLot               = 0.01;          // Base Lot Volume
 input double          InpMultiplier        = 2.0;           // Martingale Volume Multiplier
@@ -55,14 +55,14 @@ input int             InpSL                = 150;           // Stop Loss Distanc
 input int             InpMagic             = 888999;        // Algorithm Serial ID
 
 //--- Theme & Color Settings
-input string          _s5                  = "=========== UI THEME & PALETTE ===========";
+input string          _s5                  = "======== UI THEME & PALETTE ========";
 input ENUM_THEME      InpTheme             = THEME_ONYX_GOLD;   // Active Visual Theme
 input color           Label_Color          = clrGold;           // Primary Label Color
 input color           Value_Color          = clrWhite;          // Numerical Value Color
 input color           Live_Color           = C'255,225,100';    // Real-time Accent Color
 
 //--- Chart Visualization
-input string          _s6                  = "=========== CHART VISUALIZATION ===========";
+input string          _s6                  = "======== CHART VISUALIZATION ========";
 input bool            InpShowGTChart       = true;              // Plot GT Mathematical Levels
 input int             InpLevelWidth        = 1;                 // Level Line Thickness
 input ENUM_LINE_STYLE InpLevelStyle        = STYLE_SOLID;       // Level Line Pattern
@@ -450,7 +450,7 @@ void CreateDashboardTab(int y)
    CreateQuadBarRow(PREFIX + "R_Awal",  y, "Awal");      y += ROW_H;
    CreateQuadBarRow(PREFIX + "R_OC",    y, "Neto");      y += ROW_H;
    CreateQuadBarRow(PREFIX + "R_LH",    y, "Inti");      y += ROW_H;
-   CreateQuadBarRow(PREFIX + "R_Range", y, "Jangkauan"); y += ROW_H + 5;
+   CreateQuadBarRow(PREFIX + "R_Range", y, "Julat"); y += ROW_H + 5;
 
    UpdateInfoSectionOnDashboard(y);
 }
@@ -517,7 +517,7 @@ void CreateAboutTab(int y)
    CreateRect(PREFIX + "Ab_Box",    contentX, lineY, contentW, 100, gClrBg, clrSilver);
    CreateLabel(PREFIX + "Ab_Status",  contentX + 10, lineY + 10, "STATUS SISTEM: OPERASIONAL",                     gClrSuccess, 9);
    CreateLabel(PREFIX + "Ab_Lince",   contentX + 10, lineY + 30, "License: RINGIN BAMBU Juli 2026",                clrSilver,   8);
-   CreateLabel(PREFIX + "Ab_Support", contentX + 10, lineY + 70, "Support: mql5.com/getbos | t.me/ringinbambu",   gClrAccent,  8);
+   CreateLabel(PREFIX + "Ab_Support", contentX + 10, lineY + 70, "Support: mql5.com/getbos | t.me/jackmusk",   gClrAccent,  8);
 }
 
 void CreateTradingTab(int y)
@@ -573,10 +573,10 @@ void CreateVisualTab(int y)
    int lineY   = y + 20;
    int centerX = X_Offset + Panel_Width/2;
    
-   CreateLabel(PREFIX + "Vs_Title", centerX, lineY, "PENGATURAN TAMPILAN GT", gClrAccent, 11, FONT_MAIN, ANCHOR_CENTER);
+   CreateLabel(PREFIX + "Vs_Title", centerX, lineY, "PENGATURAN TAMPILAN", gClrAccent, 11, FONT_MAIN, ANCHOR_CENTER);
    lineY += 60;
    
-   string toggleText = extShowGTChart ? "MENONAKTIFKAN LEVEL GT" : "MENGAKTIFKAN LEVEL GT";
+   string toggleText = extShowGTChart ? "MENONAKTIFKAN LEVEL" : "MENGAKTIFKAN LEVEL";
    color  toggleBg   = extShowGTChart ? gClrDanger : gClrSuccess;
    
    CreateButton(PREFIX + "TOG_CHART", centerX, lineY, 220, 40, toggleText, clrWhite, toggleBg);
@@ -882,8 +882,8 @@ void WriteGenesisJSON()
       }
       else
       {
-         pts_to_so = "Hedged";
-         so_price  = "Hedged";
+         pts_to_so = "Terkunci";
+         so_price  = "Terkunci";
       }
    }
 
@@ -910,7 +910,7 @@ void WriteGenesisJSON()
    json += "\"badan_bawah\":" + DoubleToString(bL0, myDigits) + ",";
    json += "\"neto\":"  + IntegerToString(oc0) + ",";
    json += "\"inti\":"  + DoubleToString(close0, myDigits) + ",";
-   json += "\"jangkauan\":" + IntegerToString(lh0) + ",";
+   json += "\"julat\":" + IntegerToString(lh0) + ",";
    json += "\"ch\":" + IntegerToString(ch0) + ",";
    json += "\"cl\":" + IntegerToString(cl0) + ",";
 
@@ -919,19 +919,19 @@ void WriteGenesisJSON()
    json += "\"open\":" + DoubleToString(open1,myDigits) + ",\"high\":" + DoubleToString(high1,myDigits);
    json += ",\"low\":" + DoubleToString(low1,myDigits) + ",\"close\":" + DoubleToString(close1,myDigits);
    json += ",\"neto\":" + IntegerToString((int)((close1-open1)/myPoint));
-   json += ",\"jangkauan\":" + IntegerToString((int)((high1-low1)/myPoint)) + "},";
+   json += ",\"julat\":" + IntegerToString((int)((high1-low1)/myPoint)) + "},";
 
    json += "\"gt2\":{";
    json += "\"open\":" + DoubleToString(open2,myDigits) + ",\"high\":" + DoubleToString(high2,myDigits);
    json += ",\"low\":" + DoubleToString(low2,myDigits) + ",\"close\":" + DoubleToString(close2,myDigits);
    json += ",\"neto\":" + IntegerToString((int)((close2-open2)/myPoint));
-   json += ",\"jangkauan\":" + IntegerToString((int)((high2-low2)/myPoint)) + "},";
+   json += ",\"julat\":" + IntegerToString((int)((high2-low2)/myPoint)) + "},";
 
    json += "\"gt3\":{";
    json += "\"open\":" + DoubleToString(open3,myDigits) + ",\"high\":" + DoubleToString(high3,myDigits);
    json += ",\"low\":" + DoubleToString(low3,myDigits) + ",\"close\":" + DoubleToString(close3,myDigits);
    json += ",\"neto\":" + IntegerToString((int)((close3-open3)/myPoint));
-   json += ",\"jangkauan\":" + IntegerToString((int)((high3-low3)/myPoint)) + "},";
+   json += ",\"julat\":" + IntegerToString((int)((high3-low3)/myPoint)) + "},";
 
    // === Akun & posisi ===
    json += "\"balance\":" + DoubleToString(balance, 2) + ",";

@@ -9,7 +9,7 @@ Bot Telegram teman untuk menanyakan **harga Gold (XAUUSD)** seputar MT5:
 |----------|--------|
 | `/start` | Mulai & menu interaktif |
 | `/menu`  | Tampilkan tombol menu |
-| `/harga` | Harga aktual + OHLC |
+| `/harga` | Harga aktual + TABRANIJ |
 | `/tren`  | Tren singkat (MA-based) |
 | `/sinyal`| Sinyal sederhana BUY/SELL/WAIT |
 | `/isu`   | Isu & rumor yang perlu diperhatikan |

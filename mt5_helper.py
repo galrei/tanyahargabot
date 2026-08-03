@@ -36,8 +36,14 @@ def _find_genesis_file() -> Optional[Path]:
     if env_path and Path(env_path).exists():
         return Path(env_path)
 
-    # 3. Cari di folder Terminal MT5
     appdata = Path(os.environ.get("APPDATA", ""))
+
+    # 3. Common\Files (FILE_COMMON di MQL5) — lokasi utama dari EA
+    common_files = appdata / "MetaQuotes" / "Terminal" / "Common" / "Files" / "genesis_data.json"
+    if common_files.exists():
+        return common_files
+
+    # 4. Cari di setiap folder Terminal MT5
     terminal_root = appdata / "MetaQuotes" / "Terminal"
     if terminal_root.exists():
         for terminal_dir in terminal_root.iterdir():

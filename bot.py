@@ -1,19 +1,28 @@
 #!/usr/bin/env python3
 """
-TanyaHargaBot - Bot Telegram teman untuk menanyakan harga Gold (XAUUSD) di MT5
-Fitur: harga aktual, tren, faktual, sinyal, isu/rumor
+TanyaHargaBot - Teman trader gold (XAUUSD) di MT5
+Menu lengkap: harga aktual, tren, sinyal, support/resistance, isu/rumor, ringkasan
 """
 
 import os
+import sys
 import logging
 import asyncio
+import random
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
 import requests
 import yfinance as yf
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    BotCommand,
+)
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -25,7 +34,6 @@ from telegram.ext import (
 
 load_dotenv()
 
-# ==================== KONFIGURASI ====================
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN tidak ditemukan di .env")
@@ -36,22 +44,51 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ==================== DATA SOURCE ====================
-def get_gold_price_yf() -> Optional[Dict[str, Any]]:
-    """Ambil harga XAUUSD dari Yahoo Finance (proxy untuk MT5)."""
+
+# ==================== KEYBOARD MENU ====================
+def menu_utama() -> ReplyKeyboardMarkup:
+    """Keyboard tetap di bawah chat (mirip rejekibot)."""
+    keyboard = [
+        [KeyboardButton("💰 Harga Aktual"), KeyboardButton("📈 Tren")],
+        [KeyboardButton("🎯 Sinyal"), KeyboardButton("📊 Support / Resistance")],
+        [KeyboardButton("📰 Isu & Rumor"), KeyboardButton("📋 Ringkasan Lengkap")],
+        [KeyboardButton("❓ Bantuan")],
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+def tombol_aksi() -> InlineKeyboardMarkup:
+    """Tombol cepat setelah melihat hasil."""
+    keyboard = [
+        [
+            InlineKeyboardButton("💰 Harga", callback_data="harga"),
+            InlineKeyboardButton("📈 Tren", callback_data="tren"),
+        ],
+        [
+            InlineKeyboardButton("🎯 Sinyal", callback_data="sinyal"),
+            InlineKeyboardButton("📊 S/R", callback_data="sr"),
+        ],
+        [
+            InlineKeyboardButton("📰 Isu", callback_data="isu"),
+            InlineKeyboardButton("📋 Lengkap", callback_data="full"),
+        ],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+# ==================== DATA HARGA ====================
+def get_gold_data() -> Dict[str, Any]:
+    """Ambil data XAUUSD dari Yahoo Finance."""
     try:
-        ticker = yf.Ticker("GC=F")  # Gold Futures
-        info = ticker.info
-        hist = ticker.history(period="5d", interval="1h")
+        ticker = yf.Ticker("GC=F")
+        hist = ticker.history(period="10d", interval="1h")
 
         if hist.empty:
-            # Fallback ke XAUUSD=X
             ticker = yf.Ticker("XAUUSD=X")
-            hist = ticker.history(period="5d", interval="1h")
-            info = ticker.info
+            hist = ticker.history(period="10d", interval="1h")
 
         if hist.empty:
-            return None
+            return {"error": "Gagal mengambil data harga. Coba lagi sebentar."}
 
         last = hist.iloc[-1]
         prev = hist.iloc[-2] if len(hist) > 1 else last
@@ -63,11 +100,25 @@ def get_gold_price_yf() -> Optional[Dict[str, Any]]:
         change = price - float(prev["Close"])
         change_pct = (change / float(prev["Close"])) * 100 if prev["Close"] else 0
 
-        # Tren sederhana berdasarkan MA
-        closes = hist["Close"].tail(24)
-        ma_short = closes.tail(6).mean()
-        ma_long = closes.mean()
-        trend = "NAIK 📈" if ma_short > ma_long else "TURUN 📉" if ma_short < ma_long else "SIDEWAYS ↔️"
+        # Tren MA
+        closes = hist["Close"].tail(48)
+        ma_fast = closes.tail(8).mean()
+        ma_slow = closes.mean()
+        if ma_fast > ma_slow * 1.0005:
+            trend = "NAIK 📈"
+            trend_desc = "Bullish — harga di atas MA"
+        elif ma_fast < ma_slow * 0.9995:
+            trend = "TURUN 📉"
+            trend_desc = "Bearish — harga di bawah MA"
+        else:
+            trend = "SIDEWAYS ↔️"
+            trend_desc = "Konsolidasi — arah belum jelas"
+
+        # Support / Resistance sederhana
+        recent = hist.tail(48)
+        resistance = float(recent["High"].max())
+        support = float(recent["Low"].min())
+        mid = (resistance + support) / 2
 
         return {
             "price": round(price, 2),
@@ -77,382 +128,390 @@ def get_gold_price_yf() -> Optional[Dict[str, Any]]:
             "change": round(change, 2),
             "change_pct": round(change_pct, 3),
             "trend": trend,
-            "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-            "source": "Yahoo Finance (GC=F / XAUUSD)",
+            "trend_desc": trend_desc,
+            "support": round(support, 2),
+            "resistance": round(resistance, 2),
+            "mid": round(mid, 2),
+            "time": datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC"),
+            "source": "Yahoo Finance (GC=F)",
         }
     except Exception as e:
-        logger.error(f"Error yfinance: {e}")
-        return None
+        logger.error(f"Error ambil data: {e}")
+        return {"error": f"Gagal mengambil data: {e}"}
 
 
-def get_gold_price_metals() -> Optional[Dict[str, Any]]:
-    """Fallback: ambil dari metals-api style atau free endpoint sederhana."""
-    try:
-        # Gunakan endpoint publik sederhana (bisa diganti dengan API key sendiri)
-        url = "https://api.metals.live/v1/spot/gold"
-        r = requests.get(url, timeout=10)
-        if r.status_code == 200:
-            data = r.json()
-            if isinstance(data, list) and data:
-                price = float(data[0].get("price", 0))
-                return {
-                    "price": round(price, 2),
-                    "open": None,
-                    "high": None,
-                    "low": None,
-                    "change": None,
-                    "change_pct": None,
-                    "trend": "N/A",
-                    "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-                    "source": "metals.live",
-                }
-    except Exception as e:
-        logger.error(f"Error metals.live: {e}")
-    return None
-
-
-def get_gold_data() -> Dict[str, Any]:
-    """Ambil data harga gold terbaik yang tersedia."""
-    data = get_gold_price_yf()
-    if data:
-        return data
-    data = get_gold_price_metals()
-    if data:
-        return data
-    return {
-        "price": None,
-        "error": "Gagal mengambil data harga. Coba lagi nanti.",
-        "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-    }
-
-
-def generate_signal(data: Dict[str, Any]) -> str:
-    """Generate sinyal sederhana berdasarkan tren & perubahan harga."""
-    if not data.get("price"):
-        return "⚠️ Data tidak tersedia untuk sinyal."
+def buat_sinyal(data: Dict[str, Any]) -> str:
+    if data.get("error") or not data.get("price"):
+        return "⚠️ Data tidak tersedia."
 
     change = data.get("change_pct") or 0
     trend = data.get("trend", "")
+    price = data["price"]
+    support = data.get("support", 0)
+    resistance = data.get("resistance", 0)
 
-    if "NAIK" in trend and change > 0.15:
-        signal = "🟢 BUY / LONG"
-        reason = "Tren naik + momentum positif. Pertimbangkan entry long dengan SL di bawah low terbaru."
-    elif "TURUN" in trend and change < -0.15:
-        signal = "🔴 SELL / SHORT"
-        reason = "Tren turun + momentum negatif. Pertimbangkan entry short dengan SL di atas high terbaru."
-    elif abs(change) < 0.05:
-        signal = "🟡 WAIT / SIDEWAYS"
-        reason = "Pergerakan sempit. Tunggu breakout atau konfirmasi arah."
+    jarak_sup = ((price - support) / price) * 100 if price else 0
+    jarak_res = ((resistance - price) / price) * 100 if price else 0
+
+    if "NAIK" in trend and change > 0.1:
+        sinyal = "🟢 BUY / LONG"
+        alasan = (
+            f"Tren naik + momentum positif.\n"
+            f"• Entry sekitar: ${price:,.2f}\n"
+            f"• SL ide: di bawah support ${support:,.2f}\n"
+            f"• TP ide: dekat resistance ${resistance:,.2f}"
+        )
+    elif "TURUN" in trend and change < -0.1:
+        sinyal = "🔴 SELL / SHORT"
+        alasan = (
+            f"Tren turun + momentum negatif.\n"
+            f"• Entry sekitar: ${price:,.2f}\n"
+            f"• SL ide: di atas resistance ${resistance:,.2f}\n"
+            f"• TP ide: dekat support ${support:,.2f}"
+        )
+    elif jarak_sup < 0.15:
+        sinyal = "🟡 WATCH SUPPORT"
+        alasan = "Harga dekat support. Pantau apakah hold atau break."
+    elif jarak_res < 0.15:
+        sinyal = "🟡 WATCH RESISTANCE"
+        alasan = "Harga dekat resistance. Pantau apakah reject atau breakout."
     else:
-        signal = "🟠 WATCH"
-        reason = "Arah belum jelas. Pantau support/resistance terdekat."
+        sinyal = "🟠 WAIT / SIDEWAYS"
+        alasan = "Arah belum jelas. Tunggu breakout atau konfirmasi lebih kuat."
 
-    return f"**Sinyal:** {signal}\n{reason}"
+    return f"**Sinyal:** {sinyal}\n\n{alasan}"
 
 
-def get_rumor_isu() -> str:
-    """Placeholder isu/rumor. Bisa diganti dengan scraping news atau API berita."""
-    # Contoh statis + bisa dikembangkan dengan news API
-    issues = [
-        "📌 Fed rate decision & statement bisa gerakkan harga gold secara signifikan.",
-        "📌 Kekhawatiran inflasi & safe-haven demand masih mendukung emas.",
-        "📌 Kekuatan USD (DXY) biasanya berkorelasi negatif dengan XAUUSD.",
-        "📌 Geopolitik (konflik, pemilihan, dll) sering jadi katalis short-term.",
-        "📌 Data Non-Farm Payroll (NFP) & CPI AS selalu diwaspadai trader gold.",
+def get_isu() -> str:
+    daftar = [
+        "📌 Keputusan suku bunga The Fed & statement-nya sangat mempengaruhi gold.",
+        "📌 Data CPI & Non-Farm Payroll (NFP) AS rutin digarap trader gold.",
+        "📌 Kekuatan Dolar (DXY) biasanya berkorelasi negatif dengan XAUUSD.",
+        "📌 Ketegangan geopolitik sering memicu demand safe-haven ke emas.",
+        "📌 Ekspektasi inflasi & yield obligasi AS memengaruhi harga gold.",
+        "📌 Posisi besar di COMEX / CFTC bisa jadi sinyal arah jangka menengah.",
+        "📌 Kalender high-impact (FOMC, CPI, NFP) sebaiknya dihindari trading agresif.",
     ]
-    import random
-    selected = random.sample(issues, k=3)
-    return "\n".join(selected)
+    terpilih = random.sample(daftar, k=4)
+    return "\n\n".join(terpilih)
+
+
+# ==================== FORMAT PESAN ====================
+def format_harga(data: Dict[str, Any]) -> str:
+    if data.get("error"):
+        return f"❌ {data['error']}"
+    tanda = "🟢" if data["change"] >= 0 else "🔴"
+    return (
+        f"💰 *Harga Gold (XAUUSD)*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"Harga sekarang : *${data['price']:,.2f}*\n"
+        f"Open           : ${data['open']:,.2f}\n"
+        f"High           : ${data['high']:,.2f}\n"
+        f"Low            : ${data['low']:,.2f}\n"
+        f"Perubahan      : {tanda} {data['change']:+.2f} ({data['change_pct']:+.3f}%)\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🕐 {data['time']}\n"
+        f"📡 {data['source']}"
+    )
+
+
+def format_tren(data: Dict[str, Any]) -> str:
+    if data.get("error"):
+        return f"❌ {data['error']}"
+    return (
+        f"📈 *Analisis Tren Gold*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"Harga   : *${data['price']:,.2f}*\n"
+        f"Tren    : *{data['trend']}*\n"
+        f"Keterangan : {data['trend_desc']}\n"
+        f"Perubahan  : {data['change']:+.2f} ({data['change_pct']:+.3f}%)\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"_Berdasarkan Moving Average periode pendek vs panjang._"
+    )
+
+
+def format_sinyal(data: Dict[str, Any]) -> str:
+    if data.get("error"):
+        return f"❌ {data['error']}"
+    sinyal_text = buat_sinyal(data)
+    return (
+        f"🎯 *Sinyal Trading Gold*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"Harga : *${data['price']:,.2f}*\n"
+        f"Tren  : {data['trend']}\n\n"
+        f"{sinyal_text}\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"⚠️ _Bukan saran finansial. Gunakan risk management._"
+    )
+
+
+def format_sr(data: Dict[str, Any]) -> str:
+    if data.get("error"):
+        return f"❌ {data['error']}"
+    price = data["price"]
+    sup = data["support"]
+    res = data["resistance"]
+    mid = data["mid"]
+    return (
+        f"📊 *Support & Resistance*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"Harga sekarang : *${price:,.2f}*\n\n"
+        f"🔴 Resistance  : *${res:,.2f}*\n"
+        f"   Jarak       : {((res - price) / price * 100):+.2f}%\n\n"
+        f"⚪ Midpoint    : ${mid:,.2f}\n\n"
+        f"🟢 Support     : *${sup:,.2f}*\n"
+        f"   Jarak       : {((price - sup) / price * 100):+.2f}%\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"_Dihitung dari high/low 48 candle terakhir._"
+    )
+
+
+def format_isu() -> str:
+    return (
+        f"📰 *Isu & Rumor yang Perlu Diperhatikan*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{get_isu()}\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"_Selalu cross-check dengan sumber berita resmi._"
+    )
+
+
+def format_full(data: Dict[str, Any]) -> str:
+    if data.get("error"):
+        return f"❌ {data['error']}"
+    sinyal_text = buat_sinyal(data)
+    return (
+        f"📋 *Ringkasan Lengkap Gold (XAUUSD)*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"💰 Harga  : *${data['price']:,.2f}*\n"
+        f"   Open   : ${data['open']:,.2f}\n"
+        f"   High   : ${data['high']:,.2f}\n"
+        f"   Low    : ${data['low']:,.2f}\n"
+        f"   Change : {data['change']:+.2f} ({data['change_pct']:+.3f}%)\n\n"
+        f"📈 Tren   : *{data['trend']}*\n"
+        f"   {data['trend_desc']}\n\n"
+        f"📊 S/R\n"
+        f"   Resistance : ${data['resistance']:,.2f}\n"
+        f"   Support    : ${data['support']:,.2f}\n\n"
+        f"{sinyal_text}\n\n"
+        f"🕐 {data['time']}\n"
+        f"⚠️ Bukan saran finansial."
+    )
 
 
 # ==================== HANDLERS ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
+    nama = user.first_name or "Trader"
     text = (
-        f"Halo {user.first_name or 'Trader'}! 👋\n\n"
-        "Saya *TanyaHargaBot* — temanmu untuk pantau harga Gold (XAUUSD) ala MT5.\n\n"
-        "Yang bisa saya bantu:\n"
-        "• Harga aktual & faktual\n"
-        "• Tren singkat\n"
-        "• Sinyal sederhana\n"
-        "• Isu / rumor pasar\n\n"
-        "Ketik /menu atau pilih tombol di bawah."
+        f"Halo *{nama}*! 👋\n\n"
+        f"Saya *TanyaHargaBot* — temanmu untuk pantau harga *Gold (XAUUSD)*.\n\n"
+        f"Pilih menu di bawah atau ketik perintah:\n"
+        f"• 💰 Harga Aktual\n"
+        f"• 📈 Tren\n"
+        f"• 🎯 Sinyal\n"
+        f"• 📊 Support / Resistance\n"
+        f"• 📰 Isu & Rumor\n"
+        f"• 📋 Ringkasan Lengkap\n\n"
+        f"Semoga trading-mu cuan 🙏"
     )
-    keyboard = [
-        [
-            InlineKeyboardButton("💰 Harga Aktual", callback_data="harga"),
-            InlineKeyboardButton("📈 Tren", callback_data="tren"),
-        ],
-        [
-            InlineKeyboardButton("🎯 Sinyal", callback_data="sinyal"),
-            InlineKeyboardButton("📰 Isu/Rumor", callback_data="isu"),
-        ],
-        [
-            InlineKeyboardButton("📊 Ringkasan Lengkap", callback_data="full"),
-        ],
-    ]
     await update.message.reply_text(
         text,
         parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=menu_utama(),
     )
 
 
-async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    keyboard = [
-        [
-            InlineKeyboardButton("💰 Harga Aktual", callback_data="harga"),
-            InlineKeyboardButton("📈 Tren", callback_data="tren"),
-        ],
-        [
-            InlineKeyboardButton("🎯 Sinyal", callback_data="sinyal"),
-            InlineKeyboardButton("📰 Isu/Rumor", callback_data="isu"),
-        ],
-        [
-            InlineKeyboardButton("📊 Ringkasan Lengkap", callback_data="full"),
-        ],
-    ]
+async def bantuan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = (
+        "❓ *Bantuan TanyaHargaBot*\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "*Menu yang tersedia:*\n"
+        "💰 *Harga Aktual* — Harga live + OHLC\n"
+        "📈 *Tren* — Arah pasar (bullish/bearish/sideways)\n"
+        "🎯 *Sinyal* — Ide entry sederhana + SL/TP\n"
+        "📊 *Support / Resistance* — Level penting\n"
+        "📰 *Isu & Rumor* — Faktor yang sering gerakkan harga\n"
+        "📋 *Ringkasan Lengkap* — Semua info sekaligus\n\n"
+        "*Perintah teks:*\n"
+        "`/start` `/harga` `/tren` `/sinyal` `/sr` `/isu` `/full` `/help`\n\n"
+        "Data dari Yahoo Finance (mendekati harga MT5).\n"
+        "⚠️ Bukan saran finansial. Selalu pakai risk management."
+    )
     await update.message.reply_text(
-        "Pilih yang ingin ditanyakan:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        text,
+        parse_mode="Markdown",
+        reply_markup=menu_utama(),
     )
 
 
-async def harga_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("⏳ Mengambil harga gold...")
+async def kirim_harga(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    msg = await update.message.reply_text("⏳ Mengambil harga gold...")
     data = get_gold_data()
-    if data.get("price") is None:
-        await update.message.reply_text(data.get("error", "Gagal ambil data."))
-        return
-
-    msg = (
-        f"*💰 Harga Gold (XAUUSD) Aktual*\n\n"
-        f"Harga: *${data['price']:,.2f}*\n"
-        f"Open: ${data.get('open') or '-'}\n"
-        f"High: ${data.get('high') or '-'}\n"
-        f"Low: ${data.get('low') or '-'}\n"
-        f"Perubahan: {data.get('change', 0):+.2f} ({data.get('change_pct', 0):+.3f}%)\n"
-        f"Waktu: {data['time']}\n"
-        f"Sumber: {data.get('source', '-')}"
+    await msg.edit_text(
+        format_harga(data),
+        parse_mode="Markdown",
+        reply_markup=tombol_aksi(),
     )
-    await update.message.reply_text(msg, parse_mode="Markdown")
 
 
-async def tren_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("⏳ Menganalisis tren...")
+async def kirim_tren(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    msg = await update.message.reply_text("⏳ Menganalisis tren...")
     data = get_gold_data()
-    if data.get("price") is None:
-        await update.message.reply_text(data.get("error", "Gagal ambil data."))
-        return
-
-    msg = (
-        f"*📈 Tren Gold (XAUUSD)*\n\n"
-        f"Harga sekarang: *${data['price']:,.2f}*\n"
-        f"Tren singkat: *{data.get('trend', 'N/A')}*\n"
-        f"Perubahan: {data.get('change', 0):+.2f} ({data.get('change_pct', 0):+.3f}%)\n\n"
-        f"_Analisis berdasarkan moving average periode pendek vs panjang._"
+    await msg.edit_text(
+        format_tren(data),
+        parse_mode="Markdown",
+        reply_markup=tombol_aksi(),
     )
-    await update.message.reply_text(msg, parse_mode="Markdown")
 
 
-async def sinyal_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("⏳ Membuat sinyal...")
+async def kirim_sinyal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    msg = await update.message.reply_text("⏳ Menyusun sinyal...")
     data = get_gold_data()
-    if data.get("price") is None:
-        await update.message.reply_text(data.get("error", "Gagal ambil data."))
-        return
-
-    signal_text = generate_signal(data)
-    msg = (
-        f"*🎯 Sinyal Gold (XAUUSD)*\n\n"
-        f"Harga: *${data['price']:,.2f}*\n"
-        f"Tren: {data.get('trend', 'N/A')}\n\n"
-        f"{signal_text}\n\n"
-        f"⚠️ _Ini bukan saran finansial. Selalu gunakan risk management._"
+    await msg.edit_text(
+        format_sinyal(data),
+        parse_mode="Markdown",
+        reply_markup=tombol_aksi(),
     )
-    await update.message.reply_text(msg, parse_mode="Markdown")
 
 
-async def isu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    isu = get_rumor_isu()
-    msg = (
-        f"*📰 Isu & Rumor yang Perlu Diperhatikan*\n\n"
-        f"{isu}\n\n"
-        f"_Update ini bersifat edukatif. Selalu cross-check dengan sumber berita resmi._"
-    )
-    await update.message.reply_text(msg, parse_mode="Markdown")
-
-
-async def full_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("⏳ Menyusun ringkasan lengkap...")
+async def kirim_sr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    msg = await update.message.reply_text("⏳ Menghitung Support & Resistance...")
     data = get_gold_data()
-    if data.get("price") is None:
-        await update.message.reply_text(data.get("error", "Gagal ambil data."))
-        return
-
-    signal_text = generate_signal(data)
-    isu = get_rumor_isu()
-
-    msg = (
-        f"*📊 Ringkasan Lengkap Gold (XAUUSD)*\n\n"
-        f"*Harga Aktual:* ${data['price']:,.2f}\n"
-        f"Open: ${data.get('open') or '-'} | High: ${data.get('high') or '-'} | Low: ${data.get('low') or '-'}\n"
-        f"Perubahan: {data.get('change', 0):+.2f} ({data.get('change_pct', 0):+.3f}%)\n"
-        f"Tren: *{data.get('trend', 'N/A')}*\n"
-        f"Waktu: {data['time']}\n\n"
-        f"{signal_text}\n\n"
-        f"*Isu/Rumor:*\n{isu}\n\n"
-        f"Sumber data: {data.get('source', '-')}\n"
-        f"⚠️ Bukan saran finansial."
+    await msg.edit_text(
+        format_sr(data),
+        parse_mode="Markdown",
+        reply_markup=tombol_aksi(),
     )
-    await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+async def kirim_isu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        format_isu(),
+        parse_mode="Markdown",
+        reply_markup=tombol_aksi(),
+    )
+
+
+async def kirim_full(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    msg = await update.message.reply_text("⏳ Menyusun ringkasan lengkap...")
+    data = get_gold_data()
+    await msg.edit_text(
+        format_full(data),
+        parse_mode="Markdown",
+        reply_markup=tombol_aksi(),
+    )
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-
     data_key = query.data
+
     await query.edit_message_text("⏳ Memproses...")
 
     if data_key == "harga":
         data = get_gold_data()
-        if data.get("price") is None:
-            await query.edit_message_text(data.get("error", "Gagal ambil data."))
-            return
-        msg = (
-            f"*💰 Harga Gold (XAUUSD) Aktual*\n\n"
-            f"Harga: *${data['price']:,.2f}*\n"
-            f"Open: ${data.get('open') or '-'}\n"
-            f"High: ${data.get('high') or '-'}\n"
-            f"Low: ${data.get('low') or '-'}\n"
-            f"Perubahan: {data.get('change', 0):+.2f} ({data.get('change_pct', 0):+.3f}%)\n"
-            f"Waktu: {data['time']}\n"
-            f"Sumber: {data.get('source', '-')}"
-        )
+        text = format_harga(data)
     elif data_key == "tren":
         data = get_gold_data()
-        if data.get("price") is None:
-            await query.edit_message_text(data.get("error", "Gagal ambil data."))
-            return
-        msg = (
-            f"*📈 Tren Gold (XAUUSD)*\n\n"
-            f"Harga sekarang: *${data['price']:,.2f}*\n"
-            f"Tren singkat: *{data.get('trend', 'N/A')}*\n"
-            f"Perubahan: {data.get('change', 0):+.2f} ({data.get('change_pct', 0):+.3f}%)\n\n"
-            f"_Analisis berdasarkan moving average periode pendek vs panjang._"
-        )
+        text = format_tren(data)
     elif data_key == "sinyal":
         data = get_gold_data()
-        if data.get("price") is None:
-            await query.edit_message_text(data.get("error", "Gagal ambil data."))
-            return
-        signal_text = generate_signal(data)
-        msg = (
-            f"*🎯 Sinyal Gold (XAUUSD)*\n\n"
-            f"Harga: *${data['price']:,.2f}*\n"
-            f"Tren: {data.get('trend', 'N/A')}\n\n"
-            f"{signal_text}\n\n"
-            f"⚠️ _Ini bukan saran finansial. Selalu gunakan risk management._"
-        )
+        text = format_sinyal(data)
+    elif data_key == "sr":
+        data = get_gold_data()
+        text = format_sr(data)
     elif data_key == "isu":
-        isu = get_rumor_isu()
-        msg = (
-            f"*📰 Isu & Rumor yang Perlu Diperhatikan*\n\n"
-            f"{isu}\n\n"
-            f"_Update ini bersifat edukatif. Selalu cross-check dengan sumber berita resmi._"
-        )
+        text = format_isu()
     elif data_key == "full":
         data = get_gold_data()
-        if data.get("price") is None:
-            await query.edit_message_text(data.get("error", "Gagal ambil data."))
-            return
-        signal_text = generate_signal(data)
-        isu = get_rumor_isu()
-        msg = (
-            f"*📊 Ringkasan Lengkap Gold (XAUUSD)*\n\n"
-            f"*Harga Aktual:* ${data['price']:,.2f}\n"
-            f"Open: ${data.get('open') or '-'} | High: ${data.get('high') or '-'} | Low: ${data.get('low') or '-'}\n"
-            f"Perubahan: {data.get('change', 0):+.2f} ({data.get('change_pct', 0):+.3f}%)\n"
-            f"Tren: *{data.get('trend', 'N/A')}*\n"
-            f"Waktu: {data['time']}\n\n"
-            f"{signal_text}\n\n"
-            f"*Isu/Rumor:*\n{isu}\n\n"
-            f"Sumber data: {data.get('source', '-')}\n"
-            f"⚠️ Bukan saran finansial."
-        )
+        text = format_full(data)
     else:
-        msg = "Perintah tidak dikenali."
+        text = "Perintah tidak dikenali."
 
-    await query.edit_message_text(msg, parse_mode="Markdown")
-
-
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    text = (
-        "*Perintah yang tersedia:*\n\n"
-        "/start - Mulai bot\n"
-        "/menu - Tampilkan menu tombol\n"
-        "/harga - Harga aktual gold\n"
-        "/tren - Analisis tren singkat\n"
-        "/sinyal - Sinyal sederhana\n"
-        "/isu - Isu & rumor pasar\n"
-        "/full - Ringkasan lengkap\n"
-        "/help - Bantuan ini\n\n"
-        "Bot ini menggunakan data publik (Yahoo Finance) sebagai proxy harga XAUUSD yang mirip dengan yang terlihat di MT5.\n"
-        "Untuk data real-time langsung dari broker MT5, kamu bisa integrasikan MetaTrader5 Python package (perlu terminal MT5 terpasang)."
+    await query.edit_message_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=tombol_aksi(),
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
 
 
-async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Balas pesan teks bebas dengan deteksi kata kunci sederhana."""
-    text = (update.message.text or "").lower()
-    if any(k in text for k in ["harga", "price", "berapa", "aktual"]):
-        await harga_cmd(update, context)
-    elif any(k in text for k in ["tren", "trend", "arah"]):
-        await tren_cmd(update, context)
-    elif any(k in text for k in ["sinyal", "signal", "entry"]):
-        await sinyal_cmd(update, context)
-    elif any(k in text for k in ["isu", "rumor", "berita", "news"]):
-        await isu_cmd(update, context)
-    elif any(k in text for k in ["full", "lengkap", "ringkas"]):
-        await full_cmd(update, context)
+async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Tangani tombol keyboard + kata kunci bebas."""
+    text = (update.message.text or "").strip()
+    text_lower = text.lower()
+
+    # Tombol keyboard
+    if text == "💰 Harga Aktual" or any(k in text_lower for k in ["harga", "price", "berapa"]):
+        await kirim_harga(update, context)
+    elif text == "📈 Tren" or "tren" in text_lower or "trend" in text_lower:
+        await kirim_tren(update, context)
+    elif text == "🎯 Sinyal" or "sinyal" in text_lower or "signal" in text_lower:
+        await kirim_sinyal(update, context)
+    elif text == "📊 Support / Resistance" or text_lower in ["sr", "s/r"] or "support" in text_lower or "resistance" in text_lower:
+        await kirim_sr(update, context)
+    elif text == "📰 Isu & Rumor" or any(k in text_lower for k in ["isu", "rumor", "berita", "news"]):
+        await kirim_isu(update, context)
+    elif text == "📋 Ringkasan Lengkap" or any(k in text_lower for k in ["full", "lengkap", "ringkas"]):
+        await kirim_full(update, context)
+    elif text == "❓ Bantuan" or "bantuan" in text_lower or "help" in text_lower:
+        await bantuan(update, context)
     else:
         await update.message.reply_text(
-            "Ketik /menu atau salah satu perintah: /harga /tren /sinyal /isu /full"
+            "Pilih menu di bawah atau ketik:\n"
+            "💰 Harga · 📈 Tren · 🎯 Sinyal · 📊 S/R · 📰 Isu · 📋 Lengkap",
+            reply_markup=menu_utama(),
         )
+
+
+async def post_init(application: Application) -> None:
+    """Set command list di menu Telegram."""
+    commands = [
+        BotCommand("start", "Mulai bot & tampilkan menu"),
+        BotCommand("harga", "Harga aktual gold"),
+        BotCommand("tren", "Analisis tren"),
+        BotCommand("sinyal", "Sinyal trading"),
+        BotCommand("sr", "Support & Resistance"),
+        BotCommand("isu", "Isu & rumor pasar"),
+        BotCommand("full", "Ringkasan lengkap"),
+        BotCommand("help", "Bantuan"),
+    ]
+    await application.bot.set_my_commands(commands)
 
 
 def main() -> None:
-    # Perbaikan untuk Python 3.10+ / 3.14 di Windows
-    # (mengatasi error: There is no current event loop)
-    import sys
+    # Perbaikan event loop Python 3.14 / Windows
     if sys.platform.startswith("win"):
         try:
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         except Exception:
             pass
-
     try:
         loop = asyncio.get_event_loop()
         if loop.is_closed():
-            raise RuntimeError("loop closed")
+            raise RuntimeError
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .post_init(post_init)
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("menu", menu))
-    app.add_handler(CommandHandler("harga", harga_cmd))
-    app.add_handler(CommandHandler("tren", tren_cmd))
-    app.add_handler(CommandHandler("sinyal", sinyal_cmd))
-    app.add_handler(CommandHandler("isu", isu_cmd))
-    app.add_handler(CommandHandler("full", full_cmd))
-    app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("help", bantuan))
+    app.add_handler(CommandHandler("harga", kirim_harga))
+    app.add_handler(CommandHandler("tren", kirim_tren))
+    app.add_handler(CommandHandler("sinyal", kirim_sinyal))
+    app.add_handler(CommandHandler("sr", kirim_sr))
+    app.add_handler(CommandHandler("isu", kirim_isu))
+    app.add_handler(CommandHandler("full", kirim_full))
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
 
     logger.info("TanyaHargaBot mulai berjalan...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)

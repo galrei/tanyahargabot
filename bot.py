@@ -87,6 +87,22 @@ def tombol_aksi() -> InlineKeyboardMarkup:
 
 
 # ==================== DATA HARGA ====================
+
+async def _fetch_data(timeout: float = 12.0) -> Dict[str, Any]:
+    """Ambil data di thread terpisah supaya bot tidak freeze, dengan timeout."""
+    loop = asyncio.get_event_loop()
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(None, get_gold_data),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        return {"error": "Timeout mengambil data (lebih dari {:.0f} detik). Coba lagi.".format(timeout)}
+    except Exception as e:
+        logger.error(f"fetch error: {e}")
+        return {"error": f"Gagal mengambil data: {e}"}
+
+
 def get_gold_data() -> Dict[str, Any]:
     """
     Prioritas:
@@ -150,11 +166,11 @@ def get_gold_data() -> Dict[str, Any]:
     # Fallback Yahoo Finance
     try:
         ticker = yf.Ticker("GC=F")
-        hist = ticker.history(period="10d", interval="1h")
+        hist = ticker.history(period="5d", interval="1h")
 
         if hist.empty:
             ticker = yf.Ticker("XAUUSD=X")
-            hist = ticker.history(period="10d", interval="1h")
+            hist = ticker.history(period="5d", interval="1h")
 
         if hist.empty:
             return {"error": "Gagal mengambil data harga. Coba lagi sebentar."}
@@ -305,23 +321,17 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
         return f"❌ {data['error']}"
 
     if not data.get("from_mt5") and not data.get("raw"):
-        # Coba ambil ulang khusus MT5
-        if get_harga_lengkap:
-            mt5d = get_harga_lengkap("XAUUSD")
-            if mt5d and mt5d.get("price"):
-                data = {**data, **mt5d, "from_mt5": True}
-            else:
-                return (
-                    "🏦 *MT5 / Genesis*\n"
-                    "━━━━━━━━━━━━━━━━━━━━\n"
-                    "❌ Belum terhubung ke MT5 atau file Genesis.\n\n"
-                    "*Cara mengaktifkan:*\n"
-                    "1. Pastikan MetaTrader 5 terbuka & login\n"
-                    "2. Install: `pip install MetaTrader5`\n"
-                    "3. Atau letakkan file `genesis_data.json` dari EA Genesis\n"
-                    "   di folder bot / MQL5/Files/\n\n"
-                    "Sementara bot memakai Yahoo Finance."
-                )
+        return (
+            "🏦 *MT5 / Genesis*\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "❌ Belum ada data dari EA Genesis / MT5.\n\n"
+            "*Cek langkah ini:*\n"
+            "1. EA gt.mq5 sudah di-compile & aktif di chart\n"
+            "2. File terbentuk di:\n"
+            "   `%APPDATA%\\MetaQuotes\\Terminal\\Common\\Files\\genesis_data.json`\n"
+            "3. Restart bot setelah file ada\n\n"
+            "Sementara menu *Harga Aktual* memakai Yahoo Finance."
+        )
 
     def f(v):
         if v is None:
@@ -509,42 +519,38 @@ async def bantuan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def kirim_harga(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = await update.message.reply_text("⏳ Mengambil harga gold...")
-    data = get_gold_data()
-    await msg.edit_text(
-        format_harga(data),
-        parse_mode="Markdown",
-        reply_markup=tombol_aksi(),
-    )
+    try:
+        data = await _fetch_data(12)
+        await msg.edit_text(format_harga(data), parse_mode="Markdown", reply_markup=tombol_aksi())
+    except Exception as e:
+        await msg.edit_text(f"❌ Gagal: {e}", reply_markup=tombol_aksi())
 
 
 async def kirim_tren(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = await update.message.reply_text("⏳ Menganalisis tren...")
-    data = get_gold_data()
-    await msg.edit_text(
-        format_tren(data),
-        parse_mode="Markdown",
-        reply_markup=tombol_aksi(),
-    )
+    try:
+        data = await _fetch_data(12)
+        await msg.edit_text(format_tren(data), parse_mode="Markdown", reply_markup=tombol_aksi())
+    except Exception as e:
+        await msg.edit_text(f"❌ Gagal: {e}", reply_markup=tombol_aksi())
 
 
 async def kirim_sinyal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = await update.message.reply_text("⏳ Menyusun sinyal...")
-    data = get_gold_data()
-    await msg.edit_text(
-        format_sinyal(data),
-        parse_mode="Markdown",
-        reply_markup=tombol_aksi(),
-    )
+    try:
+        data = await _fetch_data(12)
+        await msg.edit_text(format_sinyal(data), parse_mode="Markdown", reply_markup=tombol_aksi())
+    except Exception as e:
+        await msg.edit_text(f"❌ Gagal: {e}", reply_markup=tombol_aksi())
 
 
 async def kirim_sr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = await update.message.reply_text("⏳ Menghitung Support & Resistance...")
-    data = get_gold_data()
-    await msg.edit_text(
-        format_sr(data),
-        parse_mode="Markdown",
-        reply_markup=tombol_aksi(),
-    )
+    try:
+        data = await _fetch_data(12)
+        await msg.edit_text(format_sr(data), parse_mode="Markdown", reply_markup=tombol_aksi())
+    except Exception as e:
+        await msg.edit_text(f"❌ Gagal: {e}", reply_markup=tombol_aksi())
 
 
 async def kirim_isu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -557,22 +563,20 @@ async def kirim_isu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def kirim_full(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = await update.message.reply_text("⏳ Menyusun ringkasan lengkap...")
-    data = get_gold_data()
-    await msg.edit_text(
-        format_full(data),
-        parse_mode="Markdown",
-        reply_markup=tombol_aksi(),
-    )
+    try:
+        data = await _fetch_data(12)
+        await msg.edit_text(format_full(data), parse_mode="Markdown", reply_markup=tombol_aksi())
+    except Exception as e:
+        await msg.edit_text(f"❌ Gagal: {e}", reply_markup=tombol_aksi())
 
 
 async def kirim_mt5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = await update.message.reply_text("⏳ Mengambil data MT5 / Genesis...")
-    data = get_gold_data()
-    await msg.edit_text(
-        format_mt5_genesis(data),
-        parse_mode="Markdown",
-        reply_markup=tombol_aksi(),
-    )
+    try:
+        data = await _fetch_data(8)
+        await msg.edit_text(format_mt5_genesis(data), parse_mode="Markdown", reply_markup=tombol_aksi())
+    except Exception as e:
+        await msg.edit_text(f"❌ Gagal: {e}", reply_markup=tombol_aksi())
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -580,36 +584,37 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await query.answer()
     data_key = query.data
 
-    await query.edit_message_text("⏳ Memproses...")
+    try:
+        await query.edit_message_text("⏳ Memproses...")
+    except Exception:
+        pass
 
-    if data_key == "harga":
-        data = get_gold_data()
-        text = format_harga(data)
-    elif data_key == "mt5":
-        data = get_gold_data()
-        text = format_mt5_genesis(data)
-    elif data_key == "tren":
-        data = get_gold_data()
-        text = format_tren(data)
-    elif data_key == "sinyal":
-        data = get_gold_data()
-        text = format_sinyal(data)
-    elif data_key == "sr":
-        data = get_gold_data()
-        text = format_sr(data)
-    elif data_key == "isu":
-        text = format_isu()
-    elif data_key == "full":
-        data = get_gold_data()
-        text = format_full(data)
-    else:
-        text = "Perintah tidak dikenali."
+    try:
+        if data_key == "isu":
+            text = format_isu()
+        else:
+            data = await _fetch_data(12)
+            if data_key == "harga":
+                text = format_harga(data)
+            elif data_key == "mt5":
+                text = format_mt5_genesis(data)
+            elif data_key == "tren":
+                text = format_tren(data)
+            elif data_key == "sinyal":
+                text = format_sinyal(data)
+            elif data_key == "sr":
+                text = format_sr(data)
+            elif data_key == "full":
+                text = format_full(data)
+            else:
+                text = "Perintah tidak dikenali."
 
-    await query.edit_message_text(
-        text,
-        parse_mode="Markdown",
-        reply_markup=tombol_aksi(),
-    )
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=tombol_aksi())
+    except Exception as e:
+        try:
+            await query.edit_message_text(f"❌ Gagal memproses: {e}", reply_markup=tombol_aksi())
+        except Exception:
+            pass
 
 
 async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

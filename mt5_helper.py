@@ -143,19 +143,7 @@ def get_mt5_price(symbol: str = "XAUUSD") -> Optional[Dict[str, Any]]:
                 used_symbol = sym
                 break
 
-        if tick is None:
-            # Coba cari simbol yang mengandung XAU / GOLD
-            symbols = mt5.symbols_get()
-            if symbols:
-                for s in symbols:
-                    name = s.name.upper()
-                    if "XAU" in name or name == "GOLD":
-                        t = mt5.symbol_info_tick(s.name)
-                        if t:
-                            tick = t
-                            used_symbol = s.name
-                            break
-
+        # Jangan scan semua simbol (lambat) — cukup kandidat di atas
         if tick is None:
             logger.warning("Tidak menemukan simbol gold di MT5")
             return None

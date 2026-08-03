@@ -460,6 +460,30 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
 
     balance = raw.get("balance")
     equity = raw.get("equity")
+    buy_exp = raw.get("buy_exp") or "-"
+    sell_exp = raw.get("sell_exp") or "-"
+    symbol_pl = raw.get("symbol_pl")
+    symbol_pl_pts = raw.get("symbol_pl_pts")
+    margin_level_str = raw.get("margin_level_str") or "-"
+    so_price = raw.get("so_price") or "-"
+    eq_to_so = raw.get("eq_to_so") or "-"
+    pts_to_so = raw.get("pts_to_so") or "-"
+
+    # Format Symbol P/L
+    if symbol_pl is not None:
+        try:
+            pl_v = float(symbol_pl)
+            pl_pts = int(symbol_pl_pts) if symbol_pl_pts is not None else 0
+            if pl_v > 0.005:
+                pl_str = f"+{pl_v:,.2f} (+{pl_pts} pts)"
+            elif pl_v < -0.005:
+                pl_str = f"{pl_v:,.2f} ({pl_pts} pts)"
+            else:
+                pl_str = f"{pl_v:,.2f} (0 pts)"
+        except Exception:
+            pl_str = str(symbol_pl)
+    else:
+        pl_str = "-"
 
     text = (
         f"📐 <b>Data Faktual GT</b>\n"
@@ -473,11 +497,22 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
         f"<i>Atas/Bawah/Neto/Jangkau = poin</i>\n"
         f"<pre>{table}</pre>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"<b>Posisi &amp; Akun</b>\n"
+        f"<pre>"
+        f"Balance      : {num(balance)}\n"
+        f"Equity       : {num(equity)}\n"
+        f"Buy Exp      : {_h(buy_exp)}\n"
+        f"Sell Exp     : {_h(sell_exp)}\n"
+        f"Symbol P/L   : {_h(pl_str)}\n"
+        f"Margin Level : {_h(margin_level_str)}\n"
+        f"SO Price     : {_h(so_price)}\n"
+        f"Eq to SO     : {_h(eq_to_so)}\n"
+        f"Pts to SO    : {_h(pts_to_so)}"
+        f"</pre>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🕐 {waktu}\n"
+        f"📡 {sumber}"
     )
-    if balance is not None or equity is not None:
-        text += f"Balance : {num(balance)}  |  Equity : {num(equity)}\n"
-        text += "━━━━━━━━━━━━━━━━━━━━\n"
-    text += f"🕐 {waktu}\n📡 {sumber}"
     return text
 
 

@@ -818,6 +818,75 @@ void WriteGenesisJSON()
    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
    double equity  = AccountInfoDouble(ACCOUNT_EQUITY);
 
+   // --- Posisi akun (sama logika UpdateInfoSection) ---
+   double symbolPL    = 0;
+   double buyLots     = 0;
+   double sellLots    = 0;
+   double buyPriceSum = 0;
+   double sellPriceSum= 0;
+
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(PositionSelectByTicket(ticket))
+      {
+         if(PositionGetString(POSITION_SYMBOL) == _Symbol)
+         {
+            double lots  = PositionGetDouble(POSITION_VOLUME);
+            double price = PositionGetDouble(POSITION_PRICE_OPEN);
+            ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+            if(posType == POSITION_TYPE_BUY)  { buyLots  += lots; buyPriceSum  += price * lots; }
+            else if(posType == POSITION_TYPE_SELL) { sellLots += lots; sellPriceSum += price * lots; }
+            symbolPL += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+         }
+      }
+   }
+
+   double avgBuyPrice  = (buyLots  > 0) ? buyPriceSum  / buyLots  : 0;
+   double avgSellPrice = (sellLots > 0) ? sellPriceSum / sellLots : 0;
+   double netLots      = buyLots - sellLots;
+   double tickSize     = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   double tickValue    = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double pointValuePerLot = (tickSize > 0) ? tickValue * (myPoint / tickSize) : myPoint;
+   double pointValueTotal  = MathAbs(netLots) * pointValuePerLot;
+   double ptsFloating = (pointValueTotal > 0) ? symbolPL / pointValueTotal : 0;
+
+   double margin      = AccountInfoDouble(ACCOUNT_MARGIN);
+   double marginLevel = AccountInfoDouble(ACCOUNT_MARGIN_LEVEL);
+   double stopOutLevel= AccountInfoDouble(ACCOUNT_MARGIN_SO_SO);
+   long   stopOutMode = AccountInfoInteger(ACCOUNT_MARGIN_SO_MODE);
+
+   string buy_exp  = "0.00 Lots";
+   string sell_exp = "0.00 Lots";
+   string pts_to_so = "-";
+   string eq_to_so  = "-";
+   string so_price  = "-";
+   string ml_str    = "0.00%";
+   int    dispDigits = (myDigits > 4) ? 4 : myDigits;
+
+   if(buyLots  > 0) buy_exp  = StringFormat("%.2f @ %s", buyLots,  DoubleToString(avgBuyPrice, dispDigits));
+   if(sellLots > 0) sell_exp = StringFormat("%.2f @ %s", sellLots, DoubleToString(avgSellPrice, dispDigits));
+
+   if((buyLots > 0 || sellLots > 0) && margin > 0)
+   {
+      ml_str = StringFormat("%.1f%% (SO: %.1f%%)", marginLevel, stopOutLevel);
+      double equitySO  = (stopOutMode == ACCOUNT_STOPOUT_MODE_PERCENT) ? (stopOutLevel * margin) / 100.0 : stopOutLevel;
+      double equityToSO= equity - equitySO;
+      eq_to_so = DoubleToString(equityToSO, 2);
+      if(pointValueTotal > 0)
+      {
+         double ptsToSO = equityToSO / pointValueTotal;
+         pts_to_so = StringFormat("%d pts", (int)MathMax(0, MathRound(ptsToSO)));
+         double soPrice = (netLots > 0) ? bid - ptsToSO * myPoint : ask + ptsToSO * myPoint;
+         so_price = DoubleToString(soPrice, dispDigits);
+      }
+      else
+      {
+         pts_to_so = "Hedged";
+         so_price  = "Hedged";
+      }
+   }
+
    string waktu = TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS);
 
    // Bangun JSON manual (tanpa library)
@@ -864,8 +933,24 @@ void WriteGenesisJSON()
    json += ",\"neto\":" + IntegerToString((int)((close3-open3)/myPoint));
    json += ",\"jangkauan\":" + IntegerToString((int)((high3-low3)/myPoint)) + "},";
 
+   // === Akun & posisi ===
    json += "\"balance\":" + DoubleToString(balance, 2) + ",";
    json += "\"equity\":"  + DoubleToString(equity, 2) + ",";
+   json += "\"buy_lots\":" + DoubleToString(buyLots, 2) + ",";
+   json += "\"sell_lots\":" + DoubleToString(sellLots, 2) + ",";
+   json += "\"avg_buy\":" + DoubleToString(avgBuyPrice, dispDigits) + ",";
+   json += "\"avg_sell\":" + DoubleToString(avgSellPrice, dispDigits) + ",";
+   json += "\"buy_exp\":\"" + buy_exp + "\",";
+   json += "\"sell_exp\":\"" + sell_exp + "\",";
+   json += "\"symbol_pl\":" + DoubleToString(symbolPL, 2) + ",";
+   json += "\"symbol_pl_pts\":" + IntegerToString((int)MathRound(ptsFloating)) + ",";
+   json += "\"margin\":" + DoubleToString(margin, 2) + ",";
+   json += "\"margin_level\":" + DoubleToString(marginLevel, 1) + ",";
+   json += "\"margin_level_str\":\"" + ml_str + "\",";
+   json += "\"so_level\":" + DoubleToString(stopOutLevel, 1) + ",";
+   json += "\"so_price\":\"" + so_price + "\",";
+   json += "\"eq_to_so\":\"" + eq_to_so + "\",";
+   json += "\"pts_to_so\":\"" + pts_to_so + "\",";
    json += "\"timeframe\":\"" + EnumToString(Period()) + "\"";
    json += "}";
 

@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 def menu_utama() -> ReplyKeyboardMarkup:
     """Keyboard tetap di bawah chat."""
     keyboard = [
-        [KeyboardButton("💰 Harga Aktual"), KeyboardButton("🏦 MT5 / Genesis")],
+        [KeyboardButton("💰 Harga Aktual"), KeyboardButton("📐 GT")],
         [KeyboardButton("📈 Tren"), KeyboardButton("🎯 Sinyal")],
         [KeyboardButton("📊 Support / Resistance"), KeyboardButton("📰 Isu & Rumor")],
         [KeyboardButton("📋 Ringkasan Lengkap"), KeyboardButton("❓ Bantuan")],
@@ -69,7 +69,7 @@ def tombol_aksi() -> InlineKeyboardMarkup:
     keyboard = [
         [
             InlineKeyboardButton("💰 Harga", callback_data="harga"),
-            InlineKeyboardButton("🏦 MT5/Genesis", callback_data="mt5"),
+            InlineKeyboardButton("📐 GT", callback_data="mt5"),
         ],
         [
             InlineKeyboardButton("📈 Tren", callback_data="tren"),
@@ -336,15 +336,15 @@ def format_harga(data: Dict[str, Any]) -> str:
 
 
 def format_mt5_genesis(data: Dict[str, Any]) -> str:
-    """Tampilkan data faktual ala dashboard Genesis (tabel rapi)."""
+    """Tampilkan data faktual GT (tabel rapi seperti dashboard EA)."""
     if data.get("error"):
         return f"❌ {_h(data['error'])}"
 
     if not data.get("from_mt5") and not data.get("raw"):
         return (
-            "🏦 <b>MT5 / Genesis</b>\n"
+            "📐 <b>GT</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            "❌ Belum ada data dari EA Genesis / MT5.\n\n"
+            "❌ Belum ada data dari EA GT.\n\n"
             "<b>Cek langkah ini:</b>\n"
             "1. EA sudah di-compile & aktif di chart\n"
             "2. File terbentuk di:\n"
@@ -364,37 +364,39 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
             return str(v)
 
     def pts(v):
-        """Neto/jangkauan dalam poin (bukan dollar)."""
         if v is None:
             return "-"
         try:
-            n = int(float(v))
+            n = int(round(float(v)))
             return f"{n:+d}" if n != 0 else "0"
         except Exception:
             return str(v)
 
     def bar_dict(d):
-        if not isinstance(d, dict):
-            return {}
-        return d
+        return d if isinstance(d, dict) else {}
+
+    def hitung_atas_bawah(open_p, high, low, close, neto=None):
+        """
+        Atas  = poin sumbu atas (high - max(open,close))
+                neto+ : inti→tinggi | neto- : awal→tinggi
+        Bawah = poin sumbu bawah (min(open,close) - low)
+                neto+ : awal→rendah | neto- : inti→rendah
+        """
+        try:
+            o, h, l, c = float(open_p), float(high), float(low), float(close)
+        except (TypeError, ValueError):
+            return None, None
+        point = 0.01
+        try:
+            atas = int(round((h - max(o, c)) / point))
+            bawah = int(round((min(o, c) - l) / point))
+            return atas, bawah
+        except Exception:
+            return None, None
 
     gt1 = bar_dict(raw.get("gt1"))
     gt2 = bar_dict(raw.get("gt2"))
     gt3 = bar_dict(raw.get("gt3"))
-
-    # Kolom: GT3 | GT2 | GT1 | LIVE
-    def col(v, width=9):
-        s = num(v) if not isinstance(v, str) else v
-        if s == "-":
-            return s.center(width)
-        # potong jika kepanjangan
-        if len(s) > width:
-            s = s[:width]
-        return s.rjust(width)
-
-    def col_pts(v, width=9):
-        s = pts(v)
-        return s.rjust(width)
 
     live_open = data.get("awal") or data.get("open") or raw.get("open")
     live_high = data.get("tinggi") or data.get("high") or raw.get("high")
@@ -402,16 +404,44 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
     live_close = data.get("inti") or data.get("close") or raw.get("close")
     live_neto = data.get("neto") if data.get("neto") is not None else raw.get("neto")
     live_range = data.get("jangkauan") if data.get("jangkauan") is not None else raw.get("jangkauan")
-    live_atas = raw.get("atas")
-    live_badan = raw.get("badan_bawah")
 
-    # Tabel monospace (pre)
+    # Atas/Bawah LIVE: pakai ch/cl dari EA jika ada, else hitung
+    live_atas = raw.get("ch")
+    live_bawah = raw.get("cl")
+    if live_atas is None or live_bawah is None:
+        a, b = hitung_atas_bawah(live_open, live_high, live_low, live_close, live_neto)
+        if live_atas is None:
+            live_atas = a
+        if live_bawah is None:
+            live_bawah = b
+
+    def atas_bawah_bar(g):
+        if not g:
+            return None, None
+        # hitung dari OHLC bar
+        return hitung_atas_bawah(g.get("open"), g.get("high"), g.get("low"), g.get("close"), g.get("neto"))
+
+    a1, b1 = atas_bawah_bar(gt1)
+    a2, b2 = atas_bawah_bar(gt2)
+    a3, b3 = atas_bawah_bar(gt3)
+
+    def col(v, width=9):
+        s = num(v) if not isinstance(v, str) else v
+        if s == "-":
+            return s.center(width)
+        if len(s) > width:
+            s = s[:width]
+        return s.rjust(width)
+
+    def col_pts(v, width=9):
+        return pts(v).rjust(width)
+
     rows = []
     rows.append("           GT3      GT2      GT1     LIVE")
     rows.append("──────── ──────── ──────── ──────── ────────")
     rows.append(f"Tinggi  {col(gt3.get('high'))} {col(gt2.get('high'))} {col(gt1.get('high'))} {col(live_high)}")
-    rows.append(f"Atas    {col('-')} {col('-')} {col('-')} {col(live_atas)}")
-    rows.append(f"Bawah   {col('-')} {col('-')} {col('-')} {col(live_badan)}")
+    rows.append(f"Atas    {col_pts(a3)} {col_pts(a2)} {col_pts(a1)} {col_pts(live_atas)}")
+    rows.append(f"Bawah   {col_pts(b3)} {col_pts(b2)} {col_pts(b1)} {col_pts(live_bawah)}")
     rows.append(f"Rendah  {col(gt3.get('low'))} {col(gt2.get('low'))} {col(gt1.get('low'))} {col(live_low)}")
     rows.append(f"Awal    {col(gt3.get('open'))} {col(gt2.get('open'))} {col(gt1.get('open'))} {col(live_open)}")
     rows.append(f"Inti    {col(gt3.get('close'))} {col(gt2.get('close'))} {col(gt1.get('close'))} {col(live_close)}")
@@ -426,20 +456,21 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
     spread = raw.get("spread") if raw.get("spread") is not None else data.get("spread")
     tf = _h(raw.get("timeframe") or "-")
     waktu = _h(data.get("time") or raw.get("time") or "-")
-    sumber = _h(data.get("source") or "Genesis EA")
+    sumber = _h(data.get("source") or "EA GT")
 
     balance = raw.get("balance")
     equity = raw.get("equity")
 
     text = (
-        f"🏦 <b>Genesis — Angka Faktual</b>\n"
+        f"📐 <b>Data Faktual GT</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"Simbol  : <b>{simbol}</b>  |  TF: {tf}\n"
         f"Harga   : <b>${harga}</b>\n"
         f"Bid/Ask : ${bid} / ${ask}\n"
         f"Spread  : {spread if spread is not None else '-'}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"<b>Riwayat (poin Neto &amp; Jangkauan)</b>\n"
+        f"<b>Riwayat Angka Faktual</b>\n"
+        f"<i>Atas/Bawah/Neto/Jangkau = poin</i>\n"
         f"<pre>{table}</pre>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
     )
@@ -555,7 +586,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Saya <b>TanyaHargaBot</b> — temanmu untuk pantau harga <b>Gold (XAUUSD)</b>.\n\n"
         f"Pilih menu di bawah:\n"
         f"• 💰 Harga Aktual\n"
-        f"• 🏦 MT5 / Genesis (data faktual broker + EA)\n"
+        f"• 📐 GT (data faktual dari EA)\n"
         f"• 📈 Tren\n"
         f"• 🎯 Sinyal\n"
         f"• 📊 Support / Resistance\n"
@@ -647,7 +678,7 @@ async def kirim_full(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def kirim_mt5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    msg = await update.message.reply_text("⏳ Mengambil data MT5 / Genesis...")
+    msg = await update.message.reply_text("⏳ Mengambil data GT...")
     try:
         data = await _fetch_data(8)
         await msg.edit_text(format_mt5_genesis(data), parse_mode="HTML", reply_markup=tombol_aksi())
@@ -701,7 +732,7 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     # Tombol keyboard
     if text == "💰 Harga Aktual" or any(k in text_lower for k in ["harga", "price", "berapa"]):
         await kirim_harga(update, context)
-    elif text == "🏦 MT5 / Genesis" or any(k in text_lower for k in ["mt5", "genesis", "broker", "faktual"]):
+    elif text == "📐 GT" or any(k in text_lower for k in ["mt5", "genesis", "broker", "faktual", "gt"]):
         await kirim_mt5(update, context)
     elif text == "📈 Tren" or "tren" in text_lower or "trend" in text_lower:
         await kirim_tren(update, context)
@@ -718,7 +749,7 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     else:
         await update.message.reply_text(
             "Pilih menu di bawah atau ketik:\n"
-            "💰 Harga · 🏦 MT5/Genesis · 📈 Tren · 🎯 Sinyal · 📊 S/R · 📰 Isu · 📋 Lengkap",
+            "💰 Harga · 📐 GT · 📈 Tren · 🎯 Sinyal · 📊 S/R · 📰 Isu · 📋 Lengkap",
             reply_markup=menu_utama(),
         )
 
@@ -728,7 +759,8 @@ async def post_init(application: Application) -> None:
     commands = [
         BotCommand("start", "Mulai bot & tampilkan menu"),
         BotCommand("harga", "Harga aktual gold"),
-        BotCommand("mt5", "Data faktual MT5 / Genesis"),
+        BotCommand("mt5", "Data faktual GT"),
+        BotCommand("gt", "Data faktual GT"),
         BotCommand("tren", "Analisis tren"),
         BotCommand("sinyal", "Sinyal trading"),
         BotCommand("sr", "Support & Resistance"),
@@ -765,6 +797,7 @@ def main() -> None:
     app.add_handler(CommandHandler("help", bantuan))
     app.add_handler(CommandHandler("harga", kirim_harga))
     app.add_handler(CommandHandler("mt5", kirim_mt5))
+    app.add_handler(CommandHandler("gt", kirim_mt5))
     app.add_handler(CommandHandler("tren", kirim_tren))
     app.add_handler(CommandHandler("sinyal", kirim_sinyal))
     app.add_handler(CommandHandler("sr", kirim_sr))

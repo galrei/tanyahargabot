@@ -336,9 +336,9 @@ def format_harga(data: Dict[str, Any]) -> str:
 
 
 def format_mt5_genesis(data: Dict[str, Any]) -> str:
-    """Tampilkan data faktual lengkap ala Genesis EA."""
+    """Tampilkan data faktual ala dashboard Genesis (tabel rapi)."""
     if data.get("error"):
-        return f"❌ {data['error']}"
+        return f"❌ {_h(data['error'])}"
 
     if not data.get("from_mt5") and not data.get("raw"):
         return (
@@ -346,64 +346,108 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
             "━━━━━━━━━━━━━━━━━━━━\n"
             "❌ Belum ada data dari EA Genesis / MT5.\n\n"
             "<b>Cek langkah ini:</b>\n"
-            "1. EA gt.mq5 sudah di-compile & aktif di chart\n"
+            "1. EA sudah di-compile & aktif di chart\n"
             "2. File terbentuk di:\n"
             "   <code>%APPDATA%/MetaQuotes/Terminal/Common/Files/genesis_data.json</code>\n"
             "3. Restart bot setelah file ada\n\n"
             "Sementara menu <b>Harga Aktual</b> memakai Yahoo Finance."
         )
 
-    def f(v):
+    raw = data.get("raw") or {}
+
+    def num(v, digits=2):
         if v is None:
             return "-"
         try:
-            return f"${float(v):,.2f}"
+            return f"{float(v):,.{digits}f}"
         except Exception:
             return str(v)
 
-    lines = [
-        "🏦 <b>Data Faktual MT5 / Genesis</b>",
-        "━━━━━━━━━━━━━━━━━━━━",
-        f"Simbol     : {_h(data.get('symbol', 'XAUUSD'))}",
-        f"Harga      : <b>{f(data.get('price'))}</b>",
-    ]
-    if data.get("bid") is not None:
-        lines.append(f"Bid        : {f(data.get('bid'))}")
-    if data.get("ask") is not None:
-        lines.append(f"Ask        : {f(data.get('ask'))}")
-    if data.get("spread") is not None:
-        lines.append(f"Spread     : {data.get('spread')}")
+    def pts(v):
+        """Neto/jangkauan dalam poin (bukan dollar)."""
+        if v is None:
+            return "-"
+        try:
+            n = int(float(v))
+            return f"{n:+d}" if n != 0 else "0"
+        except Exception:
+            return str(v)
 
-    lines.append("━━━━━━━━━━━━━━━━━━━━")
-    lines.append("<b>Riwayat Angka Faktual</b>")
-    lines.append(f"Awal       : {f(data.get('awal') or data.get('open'))}")
-    lines.append(f"Tinggi     : {f(data.get('tinggi') or data.get('high'))}")
-    lines.append(f"Bawah      : {f(data.get('bawah') or data.get('low'))}")
-    lines.append(f"Neto       : {f(data.get('neto') or data.get('change'))}")
-    lines.append(f"Inti       : {f(data.get('inti') or data.get('mid'))}")
-    lines.append(f"Jangkauan  : {f(data.get('jangkauan'))}")
+    def bar_dict(d):
+        if not isinstance(d, dict):
+            return {}
+        return d
 
-    # Field tambahan dari raw Genesis
-    raw = data.get("raw") or {}
-    skip = {
-        "symbol", "time", "waktu", "bid", "ask", "price", "open", "high", "low",
-        "close", "neto", "inti", "jangkauan", "tinggi", "bawah", "awal", "rendah",
-        "_source", "_file", "source",
-    }
-    extra = []
-    for k, v in raw.items():
-        if k.lower() in skip or k.startswith("_"):
-            continue
-        extra.append(f"{_h(str(k).capitalize()):12}: {_h(v)}")
-    if extra:
-        lines.append("━━━━━━━━━━━━━━━━━━━━")
-        lines.append("<b>Info tambahan Genesis</b>")
-        lines.extend(extra[:12])  # batasi biar tidak kepanjangan
+    gt1 = bar_dict(raw.get("gt1"))
+    gt2 = bar_dict(raw.get("gt2"))
+    gt3 = bar_dict(raw.get("gt3"))
 
-    lines.append("━━━━━━━━━━━━━━━━━━━━")
-    lines.append(f"🕐 {_h(data.get('time', '-'))}")
-    lines.append(f"📡 {_h(data.get('source', 'MT5/Genesis'))}")
-    return "\n".join(lines)
+    # Kolom: GT3 | GT2 | GT1 | LIVE
+    def col(v, width=9):
+        s = num(v) if not isinstance(v, str) else v
+        if s == "-":
+            return s.center(width)
+        # potong jika kepanjangan
+        if len(s) > width:
+            s = s[:width]
+        return s.rjust(width)
+
+    def col_pts(v, width=9):
+        s = pts(v)
+        return s.rjust(width)
+
+    live_open = data.get("awal") or data.get("open") or raw.get("open")
+    live_high = data.get("tinggi") or data.get("high") or raw.get("high")
+    live_low = data.get("bawah") or data.get("low") or raw.get("low")
+    live_close = data.get("inti") or data.get("close") or raw.get("close")
+    live_neto = data.get("neto") if data.get("neto") is not None else raw.get("neto")
+    live_range = data.get("jangkauan") if data.get("jangkauan") is not None else raw.get("jangkauan")
+    live_atas = raw.get("atas")
+    live_badan = raw.get("badan_bawah")
+
+    # Tabel monospace (pre)
+    rows = []
+    rows.append("           GT3      GT2      GT1     LIVE")
+    rows.append("──────── ──────── ──────── ──────── ────────")
+    rows.append(f"Tinggi  {col(gt3.get('high'))} {col(gt2.get('high'))} {col(gt1.get('high'))} {col(live_high)}")
+    rows.append(f"Atas    {col('-')} {col('-')} {col('-')} {col(live_atas)}")
+    rows.append(f"Bawah   {col('-')} {col('-')} {col('-')} {col(live_badan)}")
+    rows.append(f"Rendah  {col(gt3.get('low'))} {col(gt2.get('low'))} {col(gt1.get('low'))} {col(live_low)}")
+    rows.append(f"Awal    {col(gt3.get('open'))} {col(gt2.get('open'))} {col(gt1.get('open'))} {col(live_open)}")
+    rows.append(f"Inti    {col(gt3.get('close'))} {col(gt2.get('close'))} {col(gt1.get('close'))} {col(live_close)}")
+    rows.append(f"Neto    {col_pts(gt3.get('neto'))} {col_pts(gt2.get('neto'))} {col_pts(gt1.get('neto'))} {col_pts(live_neto)}")
+    rows.append(f"Jangkau {col_pts(gt3.get('jangkauan'))} {col_pts(gt2.get('jangkauan'))} {col_pts(gt1.get('jangkauan'))} {col_pts(live_range)}")
+    table = "\n".join(rows)
+
+    simbol = _h(data.get("symbol") or raw.get("symbol") or "XAUUSD")
+    harga = num(data.get("price") or raw.get("price"))
+    bid = num(data.get("bid") or raw.get("bid"))
+    ask = num(data.get("ask") or raw.get("ask"))
+    spread = raw.get("spread") if raw.get("spread") is not None else data.get("spread")
+    tf = _h(raw.get("timeframe") or "-")
+    waktu = _h(data.get("time") or raw.get("time") or "-")
+    sumber = _h(data.get("source") or "Genesis EA")
+
+    balance = raw.get("balance")
+    equity = raw.get("equity")
+
+    text = (
+        f"🏦 <b>Genesis — Angka Faktual</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"Simbol  : <b>{simbol}</b>  |  TF: {tf}\n"
+        f"Harga   : <b>${harga}</b>\n"
+        f"Bid/Ask : ${bid} / ${ask}\n"
+        f"Spread  : {spread if spread is not None else '-'}\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"<b>Riwayat (poin Neto &amp; Jangkauan)</b>\n"
+        f"<pre>{table}</pre>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+    )
+    if balance is not None or equity is not None:
+        text += f"Balance : {num(balance)}  |  Equity : {num(equity)}\n"
+        text += "━━━━━━━━━━━━━━━━━━━━\n"
+    text += f"🕐 {waktu}\n📡 {sumber}"
+    return text
 
 
 def format_tren(data: Dict[str, Any]) -> str:

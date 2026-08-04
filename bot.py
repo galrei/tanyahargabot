@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 TanyaHargaBot - Teman trader gold (XAUUSD) di MT5
-Menu lengkap: harga aktual, tren, sinyal, support/resistance, isu/rumor, ringkasan, sistem & strategi
+Menu lengkap: harga aktual, tren, sinyal, batas atas/batas bawah, isu/rumor, ringkasan, sistem & strategi
 """
 
 import os
@@ -57,8 +57,8 @@ def menu_utama() -> ReplyKeyboardMarkup:
     """Keyboard tetap di bawah chat."""
     keyboard = [
         [KeyboardButton("💰 Harga Aktual"), KeyboardButton("📐 GT")],
-        [KeyboardButton("📈 Tren"), KeyboardButton("🎯 Sinyal")],
-        [KeyboardButton("📊 Support / Resistance"), KeyboardButton("📰 Isu & Rumor")],
+        [KeyboardButton("📈 Arus"), KeyboardButton("🎯 Sinyal")],
+        [KeyboardButton("📊 Batas Atas / Batas Bawah"), KeyboardButton("📰 Isu & Rumor")],
         [KeyboardButton("📚 Sistem & Strategi"), KeyboardButton("📋 Ringkasan Lengkap")],
         [KeyboardButton("❓ Bantuan")],
     ]
@@ -73,11 +73,11 @@ def tombol_aksi() -> InlineKeyboardMarkup:
             InlineKeyboardButton("📐 GT", callback_data="mt5"),
         ],
         [
-            InlineKeyboardButton("📈 Tren", callback_data="tren"),
+            InlineKeyboardButton("📈 Arus", callback_data="arus"),
             InlineKeyboardButton("🎯 Sinyal", callback_data="sinyal"),
         ],
         [
-            InlineKeyboardButton("📊 S/R", callback_data="sr"),
+            InlineKeyboardButton("📊 Batas A/B", callback_data="bt"),
             InlineKeyboardButton("📰 Isu", callback_data="isu"),
         ],
         [
@@ -150,9 +150,9 @@ def get_gold_data() -> Dict[str, Any]:
                     elif change < -0.5:
                         trend, trend_desc = "TURUN 📉", "Neto negatif"
                     else:
-                        trend, trend_desc = "SIDEWAYS ↔️", "Neto sempit"
+                        trend, trend_desc = "DATAR ↔️", "Neto sempit"
                 else:
-                    trend, trend_desc = "N/A", "Data tren terbatas"
+                    trend, trend_desc = "N/A", "Data arus terbatas"
 
                 return {
                     "price": price,
@@ -161,10 +161,10 @@ def get_gold_data() -> Dict[str, Any]:
                     "low": low,
                     "change": change,
                     "change_pct": change_pct,
-                    "trend": trend,
-                    "trend_desc": trend_desc,
-                    "support": mt5d.get("support") or low,
-                    "resistance": mt5d.get("resistance") or high,
+                    "arus": arus,
+                    "arus_desc": arus_desc,
+                    "perhentian bawah": mt5d.get("perhentian bawah") or low,
+                    "perhentian atas": mt5d.get("perhentian atas") or high,
                     "mid": mt5d.get("inti"),
                     "bid": mt5d.get("bid"),
                     "ask": mt5d.get("ask"),
@@ -265,26 +265,26 @@ def buat_sinyal(data: Dict[str, Any]) -> str:
         alasan = (
             f"Tren naik + momentum positif.\n"
             f"• Entry sekitar: ${price:,.2f}\n"
-            f"• SL ide: di bawah support ${support:,.2f}\n"
-            f"• TP ide: dekat resistance ${resistance:,.2f}"
+            f"• SL ide: di bawah perhentian rendah ${support:,.2f}\n"
+            f"• TP ide: dekat perhentian atas ${resistance:,.2f}"
         )
     elif "TURUN" in trend and change < -0.1:
         sinyal = "🔴 SELL / SHORT"
         alasan = (
             f"Tren turun + momentum negatif.\n"
-            f"• Entry sekitar: ${price:,.2f}\n"
-            f"• SL ide: di atas resistance ${resistance:,.2f}\n"
-            f"• TP ide: dekat support ${support:,.2f}"
+            f"• Masuk sekitar: ${price:,.2f}\n"
+            f"• SL ide: di atas perhentian atas ${resistance:,.2f}\n"
+            f"• TP ide: dekat perhentian bawah ${support:,.2f}"
         )
     elif jarak_sup < 0.15:
-        sinyal = "🟡 WATCH SUPPORT"
-        alasan = "Harga dekat support. Pantau apakah hold atau break."
+        sinyal = "🟡 LIHAT PERHENTIAN BAWAH"
+        alasan = "Harga dekat perhentian bawah. Pantau apakah hold atau break."
     elif jarak_res < 0.15:
-        sinyal = "🟡 WATCH RESISTANCE"
-        alasan = "Harga dekat resistance. Pantau apakah reject atau breakout."
+        sinyal = "🟡 LIHAT PERHENTIAN ATAS"
+        alasan = "Harga dekat perhentian atas. Pantau apakah ayunan atau trobosan."
     else:
-        sinyal = "🟠 WAIT / SIDEWAYS"
-        alasan = "Arah belum jelas. Tunggu breakout atau konfirmasi lebih kuat."
+        sinyal = "🟠 TUNGGU / DATAR"
+        alasan = "Arah belum jelas. Tunggu trobosan atau konfirmasi lebih kuat."
 
     return f"<b>Sinyal:</b> {sinyal}\n\n{alasan}"
 
@@ -296,6 +296,9 @@ def get_isu() -> str:
         "📌 Kekuatan Dolar (DXY) biasanya berkorelasi negatif dengan XAUUSD.",
         "📌 Ketegangan geopolitik sering memicu demand safe-haven ke emas.",
         "📌 Ekspektasi inflasi & yield obligasi AS memengaruhi harga gold.",
+        "📌 Bersiaplah sebelum kesempatan datang.",
+        "📌 Keberuntungan berpihak pada yang telah mempersiapkan diri.",
+        "📌 Latih diri hari ini agar tantangan besok terasa akrab, bukan menakutkan.",
         "📌 Posisi besar di COMEX / CFTC bisa jadi sinyal arah jangka menengah.",
         "📌 Kalender high-impact (FOMC, CPI, NFP) sebaiknya dihindari trading agresif.",
     ]
@@ -305,17 +308,17 @@ def get_isu() -> str:
 
 # ==================== SISTEM & STRATEGI (FITUR BARU) ====================
 def format_strategi(data: Dict[str, Any] = None) -> str:
-    """Fitur baru: Sistem & Strategi Trading Gold."""
+    """Fitur baru: Sistem & Strategi Pengumpulan Saldo Gold."""
     if data is None:
         data = {}
 
-    # Rekomendasi dinamis berdasarkan tren saat ini
+    # Rekomendasi dinamis berdasarkan arus saat ini
     rekomendasi = ""
-    if data and not data.get("error") and data.get("trend"):
-        trend = data.get("trend", "")
+    if data and not data.get("error") and data.get("arus"):
+        arus = data.get("arus", "")
         price = data.get("price", 0)
-        support = data.get("support", 0)
-        resistance = data.get("resistance", 0)
+        perhentian bawah = data.get("perhentian bawah", 0)
+        perhentian atas = data.get("perhentian atas", 0)
 
         if "NAIK" in trend:
             rekomendasi = (
@@ -323,7 +326,7 @@ def format_strategi(data: Dict[str, Any] = None) -> str:
                 f"• Utamakan <b>Ikut golongan Neto naik / Ayunan ke bawah Buy</b>\n"
                 f"• Masuk transaksi ideal: Mendekati perhentian bawah / MA\n"
                 f"• Hindari melawan arus dengan sell agresif\n"
-                f"• Target: dekat perhentian atas (pa) ${resistance:,.2f}"
+                f"• Target: dekat perhentian atas (pa) ${perhentianatas:,.2f}"
             )
         elif "TURUN" in trend:
             rekomendasi = (
@@ -331,7 +334,7 @@ def format_strategi(data: Dict[str, Any] = None) -> str:
                 f"• Utamakan <b>Ikut golongan Neto turun / Ayunan ke atas Sell</b>\n"
                 f"• Masuk transaksi ideal: Mendekati perhentian atas / MA\n"
                 f"• Hindari melawan arus dengan buy agresif\n"
-                f"• Target: dekat perhentian bawah (pb) ${support:,.2f}"
+                f"• Target: dekat perhentian bawah (pb) ${perhentianbawah:,.2f}"
             )
         else:
             rekomendasi = (
@@ -343,7 +346,7 @@ def format_strategi(data: Dict[str, Any] = None) -> str:
             )
 
     text = (
-        "📚 <b>Sistem & Strategi Pesaldo Gold (XAUUSD)</b>\n"
+        "📚 <b>Sistem & Strategi Pengumpulan saldo Gold (XAUUSD)</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         "<b>1. Sistem Mengikuti Arus</b>\n"
         "• Ikuti arah arus utama (H1/H4/D1)\n"

@@ -209,11 +209,11 @@ def get_gold_data() -> Dict[str, Any]:
         ma_fast = closes.tail(8).mean()
         ma_slow = closes.mean()
         if ma_fast > ma_slow * 1.0005:
-            trend, trend_desc = "NAIK 📈", "Bullish — harga di atas MA"
+            trend, trend_desc = "NAIK ✈️", "Terbang — harga di atas MA"
         elif ma_fast < ma_slow * 0.9995:
-            trend, trend_desc = "TURUN 📉", "Bearish — harga di bawah MA"
+            trend, trend_desc = "TURUN ⚓", "Junam — harga di bawah MA"
         else:
-            trend, trend_desc = "SIDEWAYS ↔️", "Konsolidasi — arah belum jelas"
+            trend, trend_desc = "DATAR ↔️", "Konsolidasi — arah belum jelas"
 
         recent = hist.tail(48)
         resistance = float(recent["High"].max())
@@ -319,62 +319,62 @@ def format_strategi(data: Dict[str, Any] = None) -> str:
 
         if "NAIK" in trend:
             rekomendasi = (
-                f"\n🟢 <b>Rekomendasi saat ini (Tren NAIK):</b>\n"
-                f"• Utamakan <b>Trend Following / Pullback Buy</b>\n"
-                f"• Entry ideal: pullback ke support / MA\n"
-                f"• Hindari counter-trend sell agresif\n"
-                f"• Target: dekat resistance ${resistance:,.2f}"
+                f"\n🟢 <b>Rekomendasi saat ini (Arus NAIK):</b>\n"
+                f"• Utamakan <b>Ikut golongan Neto naik / Ayunan ke bawah Buy</b>\n"
+                f"• Masuk transaksi ideal: Mendekati perhentian bawah / MA\n"
+                f"• Hindari melawan arus dengan sell agresif\n"
+                f"• Target: dekat perhentian atas (pa) ${resistance:,.2f}"
             )
         elif "TURUN" in trend:
             rekomendasi = (
-                f"\n🔴 <b>Rekomendasi saat ini (Tren TURUN):</b>\n"
-                f"• Utamakan <b>Trend Following / Pullback Sell</b>\n"
-                f"• Entry ideal: pullback ke resistance / MA\n"
-                f"• Hindari counter-trend buy agresif\n"
-                f"• Target: dekat support ${support:,.2f}"
+                f"\n🔴 <b>Rekomendasi saat ini (Arus TURUN):</b>\n"
+                f"• Utamakan <b>Ikut golongan Neto turun / Ayunan ke atas Sell</b>\n"
+                f"• Masuk transaksi ideal: Mendekati perhentian atas / MA\n"
+                f"• Hindari melawan arus dengan buy agresif\n"
+                f"• Target: dekat perhentian bawah (pb) ${support:,.2f}"
             )
         else:
             rekomendasi = (
-                f"\n🟠 <b>Rekomendasi saat ini (SIDEWAYS):</b>\n"
-                f"• Utamakan <b>Range Trading / Mean Reversion</b>\n"
-                f"• Buy dekat support, Sell dekat resistance\n"
-                f"• Atau tunggu breakout yang jelas (konfirmasi volume/momentum)\n"
-                f"• Hindari force entry di tengah range"
+                f"\n🟠 <b>Rekomendasi saat ini (MENDATAR):</b>\n"
+                f"• Utamakan <b>Pesaldo Julat / Gelombang Rata</b>\n"
+                f"• Buy dekat perhentian bawah dan rendah, Sell dekat perhentian atas dan tinggi\n"
+                f"• Atau tunggu trobosan yang jelas (konfirmasi volume/momentum)\n"
+                f"• Hindari masuk secara tergesa-gesa di tengah gelombang"
             )
 
     text = (
-        "📚 <b>Sistem & Strategi Trading Gold (XAUUSD)</b>\n"
+        "📚 <b>Sistem & Strategi Pesaldo Gold (XAUUSD)</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        "<b>1. Sistem Trend Following</b>\n"
-        "• Ikuti arah tren utama (H1/H4/D1)\n"
-        "• Entry: pullback ke MA / support-resistance dinamis\n"
+        "<b>1. Sistem Mengikuti Arus</b>\n"
+        "• Ikuti arah arus utama (H1/H4/D1)\n"
+        "• Masuk: harga saat mundur naik atau turun / perhentian bawah-atas dinamis\n"
         "• SL: di luar struktur terakhir\n"
-        "• Cocok saat pasar trending kuat\n\n"
-        "<b>2. Strategi Breakout</b>\n"
-        "• Tunggu harga break clear support/resistance\n"
-        "• Konfirmasi: candle kuat + volume/momentum\n"
-        "• Entry setelah retest (lebih aman) atau market\n"
-        "• SL: di dalam level yang di-break\n\n"
-        "<b>3. Strategi Mean Reversion (Range)</b>\n"
-        "• Buy di support, Sell di resistance\n"
-        "• Target: midpoint atau sisi lawan\n"
-        "• Sangat cocok saat GT menunjukkan julat sempit / sideways\n\n"
-        "<b>4. Scalping dengan Data GT</b>\n"
+        "• Cocok saat pasar berarus kuat\n\n"
+        "<b>2. Strategi Trobosan</b>\n"
+        "• Tunggu harga menembus dengan jelas perhentian bawah/atas\n"
+        "• Konfirmasi: GT kuat + volume/momentum\n"
+        "• Masuk setelah pengujian (lebih aman)\n"
+        "• SL: di dalam level yang ditembus\n\n"
+        "<b>3. Strategi Bergelombang (Julat)</b>\n"
+        "• Buy di perhentian bawah, Sell di perhentian atas\n"
+        "• Target: harga tengah atau sisi lawan\n"
+        "• Sangat cocok saat GT menunjukkan julat sempit / mendatar\n\n"
+        "<b>4. Mancing dengan Data GT</b>\n"
         "• Gunakan tabel GT (Atas/Bawah/Neto/Julat)\n"
         "• Entry cepat di M1-M5 saat neto jelas + harga di ekstrem\n"
         "• Risk sangat ketat (5-15 poin)\n\n"
         "<b>5. Risk Management (WAJIB)</b>\n"
-        "• Risk per trade maksimal 1–2% equity\n"
+        "• Risk per transaksi maksimal 1–2% equity\n"
         "• Risk:Reward minimal 1:1.5 atau 1:2\n"
-        "• Jangan averaging loss tanpa sistem\n"
-        "• Hindari trading 15 menit sebelum/setelah high-impact news\n\n"
-        "<b>6. Session yang Paling Aktif Gold</b>\n"
-        "• London Open (14:00 WIB) & New York Open (19:30–20:00 WIB)\n"
+        "• Jangan berlayer minus tanpa sistem\n"
+        "• Hindari transaksi 15 menit sebelum/setelah high-impact news\n\n"
+        "<b>6. Uang Waktu yang Paling Aktif Gold</b>\n"
+        "• London (Buka 14:00 WIB) & New York (Buka 19:30–20:00 WIB)\n"
         "• Volatilitas tertinggi → peluang terbaik + risiko tertinggi\n"
         f"{rekomendasi}\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "⚠️ <i>Ini hanya edukasi & ide. Bukan saran finansial. "
-        "Selalu sesuaikan dengan gaya trading & risk management-mu sendiri.</i>"
+        "Selalu sesuaikan dengan gaya pesaldo & pengaturan risiko-mu sendiri.</i>"
     )
     return text
 
@@ -460,9 +460,9 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
 
     def hitung_atas_bawah(open_p, high, low, close, neto=None):
         """
-        Atas  = poin sumbu atas (high - max(open,close))
+        Atas  = poin kolom atas (high - max(open,close))
                 neto+ : inti→tinggi | neto- : awal→tinggi
-        Bawah = poin sumbu bawah (min(open,close) - low)
+        Bawah = poin kolom bawah (min(open,close) - low)
                 neto+ : awal→rendah | neto- : inti→rendah
         """
         try:

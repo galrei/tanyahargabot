@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 TanyaHargaBot - Teman trader gold (XAUUSD) di MT5
-Menu lengkap: harga aktual, tren, sinyal, support/resistance, isu/rumor, ringkasan
+Menu lengkap: harga aktual, tren, sinyal, support/resistance, isu/rumor, ringkasan, sistem & strategi
 """
 
 import os
@@ -59,7 +59,8 @@ def menu_utama() -> ReplyKeyboardMarkup:
         [KeyboardButton("💰 Harga Aktual"), KeyboardButton("📐 GT")],
         [KeyboardButton("📈 Tren"), KeyboardButton("🎯 Sinyal")],
         [KeyboardButton("📊 Support / Resistance"), KeyboardButton("📰 Isu & Rumor")],
-        [KeyboardButton("📋 Ringkasan Lengkap"), KeyboardButton("❓ Bantuan")],
+        [KeyboardButton("📚 Sistem & Strategi"), KeyboardButton("📋 Ringkasan Lengkap")],
+        [KeyboardButton("❓ Bantuan")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -80,12 +81,11 @@ def tombol_aksi() -> InlineKeyboardMarkup:
             InlineKeyboardButton("📰 Isu", callback_data="isu"),
         ],
         [
+            InlineKeyboardButton("📚 Strategi", callback_data="strategi"),
             InlineKeyboardButton("📋 Lengkap", callback_data="full"),
         ],
     ]
     return InlineKeyboardMarkup(keyboard)
-
-
 
 
 def _h(text) -> str:
@@ -301,6 +301,82 @@ def get_isu() -> str:
     ]
     terpilih = random.sample(daftar, k=4)
     return "\n\n".join(terpilih)
+
+
+# ==================== SISTEM & STRATEGI (FITUR BARU) ====================
+def format_strategi(data: Dict[str, Any] = None) -> str:
+    """Fitur baru: Sistem & Strategi Trading Gold."""
+    if data is None:
+        data = {}
+
+    # Rekomendasi dinamis berdasarkan tren saat ini
+    rekomendasi = ""
+    if data and not data.get("error") and data.get("trend"):
+        trend = data.get("trend", "")
+        price = data.get("price", 0)
+        support = data.get("support", 0)
+        resistance = data.get("resistance", 0)
+
+        if "NAIK" in trend:
+            rekomendasi = (
+                f"\n🟢 <b>Rekomendasi saat ini (Tren NAIK):</b>\n"
+                f"• Utamakan <b>Trend Following / Pullback Buy</b>\n"
+                f"• Entry ideal: pullback ke support / MA\n"
+                f"• Hindari counter-trend sell agresif\n"
+                f"• Target: dekat resistance ${resistance:,.2f}"
+            )
+        elif "TURUN" in trend:
+            rekomendasi = (
+                f"\n🔴 <b>Rekomendasi saat ini (Tren TURUN):</b>\n"
+                f"• Utamakan <b>Trend Following / Pullback Sell</b>\n"
+                f"• Entry ideal: pullback ke resistance / MA\n"
+                f"• Hindari counter-trend buy agresif\n"
+                f"• Target: dekat support ${support:,.2f}"
+            )
+        else:
+            rekomendasi = (
+                f"\n🟠 <b>Rekomendasi saat ini (SIDEWAYS):</b>\n"
+                f"• Utamakan <b>Range Trading / Mean Reversion</b>\n"
+                f"• Buy dekat support, Sell dekat resistance\n"
+                f"• Atau tunggu breakout yang jelas (konfirmasi volume/momentum)\n"
+                f"• Hindari force entry di tengah range"
+            )
+
+    text = (
+        "📚 <b>Sistem & Strategi Trading Gold (XAUUSD)</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "<b>1. Sistem Trend Following</b>\n"
+        "• Ikuti arah tren utama (H1/H4/D1)\n"
+        "• Entry: pullback ke MA / support-resistance dinamis\n"
+        "• SL: di luar struktur terakhir\n"
+        "• Cocok saat pasar trending kuat\n\n"
+        "<b>2. Strategi Breakout</b>\n"
+        "• Tunggu harga break clear support/resistance\n"
+        "• Konfirmasi: candle kuat + volume/momentum\n"
+        "• Entry setelah retest (lebih aman) atau market\n"
+        "• SL: di dalam level yang di-break\n\n"
+        "<b>3. Strategi Mean Reversion (Range)</b>\n"
+        "• Buy di support, Sell di resistance\n"
+        "• Target: midpoint atau sisi lawan\n"
+        "• Sangat cocok saat GT menunjukkan julat sempit / sideways\n\n"
+        "<b>4. Scalping dengan Data GT</b>\n"
+        "• Gunakan tabel GT (Atas/Bawah/Neto/Julat)\n"
+        "• Entry cepat di M1-M5 saat neto jelas + harga di ekstrem\n"
+        "• Risk sangat ketat (5-15 poin)\n\n"
+        "<b>5. Risk Management (WAJIB)</b>\n"
+        "• Risk per trade maksimal 1–2% equity\n"
+        "• Risk:Reward minimal 1:1.5 atau 1:2\n"
+        "• Jangan averaging loss tanpa sistem\n"
+        "• Hindari trading 15 menit sebelum/setelah high-impact news\n\n"
+        "<b>6. Session yang Paling Aktif Gold</b>\n"
+        "• London Open (14:00 WIB) & New York Open (19:30–20:00 WIB)\n"
+        "• Volatilitas tertinggi → peluang terbaik + risiko tertinggi\n"
+        f"{rekomendasi}\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "⚠️ <i>Ini hanya edukasi & ide. Bukan saran finansial. "
+        "Selalu sesuaikan dengan gaya trading & risk management-mu sendiri.</i>"
+    )
+    return text
 
 
 # ==================== FORMAT PESAN ====================
@@ -640,6 +716,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"• 🎯 Sinyal\n"
         f"• 📊 Support / Resistance\n"
         f"• 📰 Isu & Rumor\n"
+        f"• 📚 Sistem & Strategi\n"
         f"• 📋 Ringkasan Lengkap\n\n"
         f"Semoga trading-mu cuan 🙏"
     )
@@ -656,14 +733,16 @@ async def bantuan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         "<b>Menu yang tersedia:</b>\n"
         "💰 <b>Harga Aktual</b> — Harga live + TABRANIJ\n"
+        "📐 <b>GT</b> — Data faktual dari EA Genesis\n"
         "📈 <b>Tren</b> — Arah pasar (bullish/bearish/sideways)\n"
         "🎯 <b>Sinyal</b> — Ide entry sederhana + SL/TP\n"
         "📊 <b>Support / Resistance</b> — Level penting\n"
         "📰 <b>Isu & Rumor</b> — Faktor yang sering gerakkan harga\n"
+        "📚 <b>Sistem & Strategi</b> — Panduan sistem trading + rekomendasi dinamis\n"
         "📋 <b>Ringkasan Lengkap</b> — Semua info sekaligus\n\n"
         "<b>Perintah teks:</b>\n"
-        "<code>/start /harga /tren /sinyal /sr /isu /full /help</code>\n\n"
-        "Data dari Yahoo Finance (mendekati harga MT5).\n"
+        "<code>/start /harga /tren /sinyal /sr /isu /strategi /full /help</code>\n\n"
+        "Data dari Yahoo Finance / MT5 Genesis.\n"
         "⚠️ Bukan saran finansial. Selalu pakai risk management."
     )
     await update.message.reply_text(
@@ -717,6 +796,16 @@ async def kirim_isu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def kirim_strategi(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handler fitur baru Sistem & Strategi."""
+    msg = await update.message.reply_text("⏳ Menyusun sistem & strategi...")
+    try:
+        data = await _fetch_data(12)
+        await msg.edit_text(format_strategi(data), parse_mode="HTML", reply_markup=tombol_aksi())
+    except Exception as e:
+        await msg.edit_text(f"❌ Gagal: {e}", reply_markup=tombol_aksi())
+
+
 async def kirim_full(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = await update.message.reply_text("⏳ Menyusun ringkasan lengkap...")
     try:
@@ -760,6 +849,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 text = format_sinyal(data)
             elif data_key == "sr":
                 text = format_sr(data)
+            elif data_key == "strategi":
+                text = format_strategi(data)
             elif data_key == "full":
                 text = format_full(data)
             else:
@@ -791,6 +882,8 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await kirim_sr(update, context)
     elif text == "📰 Isu & Rumor" or any(k in text_lower for k in ["isu", "rumor", "berita", "news"]):
         await kirim_isu(update, context)
+    elif text == "📚 Sistem & Strategi" or any(k in text_lower for k in ["strategi", "sistem", "strategy", "system"]):
+        await kirim_strategi(update, context)
     elif text == "📋 Ringkasan Lengkap" or any(k in text_lower for k in ["full", "lengkap", "ringkas"]):
         await kirim_full(update, context)
     elif text == "❓ Bantuan" or "bantuan" in text_lower or "help" in text_lower:
@@ -798,7 +891,7 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     else:
         await update.message.reply_text(
             "Pilih menu di bawah atau ketik:\n"
-            "💰 Harga · 📐 GT · 📈 Tren · 🎯 Sinyal · 📊 S/R · 📰 Isu · 📋 Lengkap",
+            "💰 Harga · 📐 GT · 📈 Tren · 🎯 Sinyal · 📊 S/R · 📰 Isu · 📚 Strategi · 📋 Lengkap",
             reply_markup=menu_utama(),
         )
 
@@ -814,6 +907,7 @@ async def post_init(application: Application) -> None:
         BotCommand("sinyal", "Sinyal trading"),
         BotCommand("sr", "Support & Resistance"),
         BotCommand("isu", "Isu & rumor pasar"),
+        BotCommand("strategi", "Sistem & strategi trading"),
         BotCommand("full", "Ringkasan lengkap"),
         BotCommand("help", "Bantuan"),
     ]
@@ -851,6 +945,7 @@ def main() -> None:
     app.add_handler(CommandHandler("sinyal", kirim_sinyal))
     app.add_handler(CommandHandler("sr", kirim_sr))
     app.add_handler(CommandHandler("isu", kirim_isu))
+    app.add_handler(CommandHandler("strategi", kirim_strategi))
     app.add_handler(CommandHandler("full", kirim_full))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))

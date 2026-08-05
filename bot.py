@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-TanyaHargaBot - Teman trader gold (XAUUSD) di MT5
-Menu lengkap: harga aktual, tren, sinyal, batas atas/batas bawah, isu/rumor, ringkasan, sistem & strategi
+TanyaHargaBot - Teman pesaldo gold (XAUUSD) di MT5
+Menu lengkap: harga aktual, arus, sinyal, puncak/lembah, isu/rumor, ringkasan, sistem & strategi
 """
 
 import os
@@ -58,7 +58,7 @@ def menu_utama() -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton("💰 Harga Aktual"), KeyboardButton("📐 GT")],
         [KeyboardButton("📈 Arus"), KeyboardButton("🎯 Sinyal")],
-        [KeyboardButton("📊 Batas Atas / Batas Bawah"), KeyboardButton("📰 Isu & Rumor")],
+        [KeyboardButton("📊 Puncak & Lembah"), KeyboardButton("📰 Isu & Rumor")],
         [KeyboardButton("📚 Sistem & Strategi"), KeyboardButton("📋 Ringkasan Lengkap")],
         [KeyboardButton("❓ Bantuan")],
     ]
@@ -77,7 +77,7 @@ def tombol_aksi() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🎯 Sinyal", callback_data="sinyal"),
         ],
         [
-            InlineKeyboardButton("📊 Batas A/B", callback_data="bt"),
+            InlineKeyboardButton("📊 Puncak/Lembah", callback_data="pl"),
             InlineKeyboardButton("📰 Isu", callback_data="isu"),
         ],
         [
@@ -146,13 +146,13 @@ def get_gold_data() -> Dict[str, Any]:
                 # Tren sederhana dari neto
                 if change is not None:
                     if change > 0.5:
-                        trend, trend_desc = "NAIK 📈", "Neto positif"
+                        arus, arus_desc = "NAIK 📈", "Neto positif"
                     elif change < -0.5:
-                        trend, trend_desc = "TURUN 📉", "Neto negatif"
+                        arus, arus_desc = "TURUN 📉", "Neto negatif"
                     else:
-                        trend, trend_desc = "DATAR ↔️", "Neto sempit"
+                        arus, arus_desc = "DATAR ↔️", "Neto sempit"
                 else:
-                    trend, trend_desc = "N/A", "Data arus terbatas"
+                    arus, arus_desc = "N/A", "Data arus terbatas"
 
                 return {
                     "price": price,
@@ -163,8 +163,8 @@ def get_gold_data() -> Dict[str, Any]:
                     "change_pct": change_pct,
                     "arus": arus,
                     "arus_desc": arus_desc,
-                    "perhentian bawah": mt5d.get("perhentian bawah") or low,
-                    "perhentian atas": mt5d.get("perhentian atas") or high,
+                    "lembah": mt5d.get("lembah") or low,
+                    "puncak": mt5d.get("puncak") or high,
                     "mid": mt5d.get("inti"),
                     "bid": mt5d.get("bid"),
                     "ask": mt5d.get("ask"),
@@ -209,16 +209,16 @@ def get_gold_data() -> Dict[str, Any]:
         ma_fast = closes.tail(8).mean()
         ma_slow = closes.mean()
         if ma_fast > ma_slow * 1.0005:
-            trend, trend_desc = "NAIK ✈️", "Terbang — harga di atas MA"
+            arus, arus_desc = "NAIK ✈️", "Terbang — harga di atas MA"
         elif ma_fast < ma_slow * 0.9995:
-            trend, trend_desc = "TURUN ⚓", "Junam — harga di bawah MA"
+            arus, arus_desc = "TURUN ⚓", "Junam — harga di bawah MA"
         else:
-            trend, trend_desc = "DATAR ↔️", "Konsolidasi — arah belum jelas"
+            arus, arus_desc = "DATAR ↔️", "Konsolidasi — arah belum jelas"
 
         recent = hist.tail(48)
         resistance = float(recent["High"].max())
         support = float(recent["Low"].min())
-        mid = (resistance + support) / 2
+        mid = (puncak + lembah) / 2
 
         return {
             "price": round(price, 2),
@@ -227,10 +227,10 @@ def get_gold_data() -> Dict[str, Any]:
             "low": round(low, 2),
             "change": round(change, 2),
             "change_pct": round(change_pct, 3),
-            "trend": trend,
-            "trend_desc": trend_desc,
-            "support": round(support, 2),
-            "resistance": round(resistance, 2),
+            "arus": arus,
+            "arus_desc": arus_desc,
+            "lembah": round(lembah, 2),
+            "puncak": round(puncak, 2),
             "mid": round(mid, 2),
             "neto": round(change, 2),
             "inti": round(mid, 2),
@@ -252,36 +252,36 @@ def buat_sinyal(data: Dict[str, Any]) -> str:
         return "⚠️ Data tidak tersedia."
 
     change = data.get("change_pct") or 0
-    trend = data.get("trend", "")
+    arus = data.get("arus", "")
     price = data["price"]
-    support = data.get("support", 0)
-    resistance = data.get("resistance", 0)
+    lembah = data.get("lembah", 0)
+    puncak = data.get("puncak", 0)
 
-    jarak_sup = ((price - support) / price) * 100 if price else 0
-    jarak_res = ((resistance - price) / price) * 100 if price else 0
+    jarak_sup = ((price - lembah) / price) * 100 if price else 0
+    jarak_res = ((puncak - price) / price) * 100 if price else 0
 
-    if "NAIK" in trend and change > 0.1:
+    if "NAIK" in arus and change > 0.1:
         sinyal = "🟢 BUY / LONG"
         alasan = (
-            f"Tren naik + momentum positif.\n"
-            f"• Entry sekitar: ${price:,.2f}\n"
-            f"• SL ide: di bawah perhentian rendah ${support:,.2f}\n"
-            f"• TP ide: dekat perhentian atas ${resistance:,.2f}"
+            f"Arus naik + momentum positif.\n"
+            f"• Masuk sekitar: ${price:,.2f}\n"
+            f"• SL ide: di bawah lembah ${lembah:,.2f}\n"
+            f"• TP ide: dekat puncak ${puncak:,.2f}"
         )
-    elif "TURUN" in trend and change < -0.1:
+    elif "TURUN" in arus and change < -0.1:
         sinyal = "🔴 SELL / SHORT"
         alasan = (
-            f"Tren turun + momentum negatif.\n"
+            f"Arus turun + momentum negatif.\n"
             f"• Masuk sekitar: ${price:,.2f}\n"
-            f"• SL ide: di atas perhentian atas ${resistance:,.2f}\n"
-            f"• TP ide: dekat perhentian bawah ${support:,.2f}"
+            f"• SL ide: di atas puncak ${puncak:,.2f}\n"
+            f"• TP ide: dekat lembah ${lembah:,.2f}"
         )
     elif jarak_sup < 0.15:
-        sinyal = "🟡 LIHAT PERHENTIAN BAWAH"
-        alasan = "Harga dekat perhentian bawah. Pantau apakah hold atau break."
+        sinyal = "🟡 LIHAT LEMBAH"
+        alasan = "Harga dekat lembah. Pantau apakah hold atau break."
     elif jarak_res < 0.15:
-        sinyal = "🟡 LIHAT PERHENTIAN ATAS"
-        alasan = "Harga dekat perhentian atas. Pantau apakah ayunan atau trobosan."
+        sinyal = "🟡 LIHAT PUNCAK"
+        alasan = "Harga dekat puncak. Pantau apakah ayunan atau trobosan."
     else:
         sinyal = "🟠 TUNGGU / DATAR"
         alasan = "Arah belum jelas. Tunggu trobosan atau konfirmasi lebih kuat."
@@ -300,7 +300,7 @@ def get_isu() -> str:
         "📌 Keberuntungan berpihak pada yang telah mempersiapkan diri.",
         "📌 Latih diri hari ini agar tantangan besok terasa akrab, bukan menakutkan.",
         "📌 Posisi besar di COMEX / CFTC bisa jadi sinyal arah jangka menengah.",
-        "📌 Kalender high-impact (FOMC, CPI, NFP) sebaiknya dihindari trading agresif.",
+        "📌 Kalender high-impact (FOMC, CPI, NFP) sebaiknya dihindari memburu agresif.",
     ]
     terpilih = random.sample(daftar, k=4)
     return "\n\n".join(terpilih)
@@ -308,7 +308,7 @@ def get_isu() -> str:
 
 # ==================== SISTEM & STRATEGI (FITUR BARU) ====================
 def format_strategi(data: Dict[str, Any] = None) -> str:
-    """Fitur baru: Sistem & Strategi Pengumpulan Saldo Gold."""
+    """Fitur baru: Sistem & Strategi Pemburu Saldo Gold."""
     if data is None:
         data = {}
 
@@ -317,36 +317,36 @@ def format_strategi(data: Dict[str, Any] = None) -> str:
     if data and not data.get("error") and data.get("arus"):
         arus = data.get("arus", "")
         price = data.get("price", 0)
-        perhentian bawah = data.get("perhentian bawah", 0)
-        perhentian atas = data.get("perhentian atas", 0)
+        lembah = data.get("lembah", 0)
+        puncak = data.get("puncak", 0)
 
-        if "NAIK" in trend:
+        if "NAIK" in arus:
             rekomendasi = (
                 f"\n🟢 <b>Rekomendasi saat ini (Arus NAIK):</b>\n"
                 f"• Utamakan <b>Ikut golongan Neto naik / Ayunan ke bawah Buy</b>\n"
                 f"• Masuk transaksi ideal: Mendekati perhentian bawah / MA\n"
                 f"• Hindari melawan arus dengan sell agresif\n"
-                f"• Target: dekat perhentian atas (pa) ${perhentianatas:,.2f}"
+                f"• Target: dekat puncak ${puncak:,.2f}"
             )
-        elif "TURUN" in trend:
+        elif "TURUN" in arus:
             rekomendasi = (
                 f"\n🔴 <b>Rekomendasi saat ini (Arus TURUN):</b>\n"
                 f"• Utamakan <b>Ikut golongan Neto turun / Ayunan ke atas Sell</b>\n"
-                f"• Masuk transaksi ideal: Mendekati perhentian atas / MA\n"
+                f"• Masuk transaksi ideal: Mendekati puncak / MA\n"
                 f"• Hindari melawan arus dengan buy agresif\n"
-                f"• Target: dekat perhentian bawah (pb) ${perhentianbawah:,.2f}"
+                f"• Target: dekat lembah (pb) ${lembah:,.2f}"
             )
         else:
             rekomendasi = (
                 f"\n🟠 <b>Rekomendasi saat ini (MENDATAR):</b>\n"
-                f"• Utamakan <b>Pesaldo Julat / Gelombang Rata</b>\n"
-                f"• Buy dekat perhentian bawah dan rendah, Sell dekat perhentian atas dan tinggi\n"
+                f"• Utamakan <b>Memburu Julat / Gelombang Rata</b>\n"
+                f"• Buy dekat lembah dan rendah, Sell dekat puncak dan tinggi\n"
                 f"• Atau tunggu trobosan yang jelas (konfirmasi volume/momentum)\n"
                 f"• Hindari masuk secara tergesa-gesa di tengah gelombang"
             )
 
     text = (
-        "📚 <b>Sistem & Strategi Pengumpulan saldo Gold (XAUUSD)</b>\n"
+        "📚 <b>Sistem & Strategi Memburu saldo Gold (XAUUSD)</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         "<b>1. Sistem Mengikuti Arus</b>\n"
         "• Ikuti arah arus utama (H1/H4/D1)\n"

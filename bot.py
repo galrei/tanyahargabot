@@ -12,7 +12,6 @@ import random
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
-import requests
 import yfinance as yf
 from dotenv import load_dotenv
 from telegram import (
@@ -218,7 +217,7 @@ def get_gold_data() -> Dict[str, Any]:
         recent = hist.tail(48)
         resistance = float(recent["High"].max())
         support = float(recent["Low"].min())
-        mid = (puncak + lembah) / 2
+        mid = (resistance + support) / 2
 
         return {
             "price": round(price, 2),
@@ -229,8 +228,8 @@ def get_gold_data() -> Dict[str, Any]:
             "change_pct": round(change_pct, 3),
             "arus": arus,
             "arus_desc": arus_desc,
-            "lembah": round(lembah, 2),
-            "puncak": round(puncak, 2),
+            "lembah": round(support, 2),
+            "puncak": round(resistance, 2),
             "mid": round(mid, 2),
             "neto": round(change, 2),
             "inti": round(mid, 2),
@@ -306,13 +305,12 @@ def get_isu() -> str:
     return "\n\n".join(terpilih)
 
 
-# ==================== SISTEM & STRATEGI (FITUR BARU) ====================
+# ==================== SISTEM & STRATEGI ====================
 def format_strategi(data: Dict[str, Any] = None) -> str:
-    """Fitur baru: Sistem & Strategi Pemburu Saldo Gold."""
+    """Fitur: Sistem & Strategi Pemburu Saldo Gold."""
     if data is None:
         data = {}
 
-    # Rekomendasi dinamis berdasarkan arus saat ini
     rekomendasi = ""
     if data and not data.get("error") and data.get("arus"):
         arus = data.get("arus", "")
@@ -334,7 +332,7 @@ def format_strategi(data: Dict[str, Any] = None) -> str:
                 f"• Utamakan <b>Ikut golongan Neto turun / Ayunan ke atas Sell</b>\n"
                 f"• Masuk transaksi ideal: Mendekati puncak / MA\n"
                 f"• Hindari melawan arus dengan buy agresif\n"
-                f"• Target: dekat lembah (pb) ${lembah:,.2f}"
+                f"• Target: dekat lembah ${lembah:,.2f}"
             )
         else:
             rekomendasi = (
@@ -363,7 +361,7 @@ def format_strategi(data: Dict[str, Any] = None) -> str:
         "• Target: harga tengah atau sisi lawan\n"
         "• Sangat cocok saat GT menunjukkan julat sempit / mendatar\n\n"
         "<b>4. Mancing dengan Data GT</b>\n"
-        "• Gunakan tabel GT (Tinggi?Atas/Bawah/Rendah/Awal/Neto/Inti/Julat)\n"
+        "• Gunakan tabel GT (Tinggi/Atas/Bawah/Rendah/Awal/Neto/Inti/Julat)\n"
         "• Entry cepat di M1-M5 saat neto jelas + harga di ekstrem\n"
         "• Risk sangat ketat (5-15 poin)\n\n"
         "<b>5. Risk Management (WAJIB)</b>\n"
@@ -371,7 +369,7 @@ def format_strategi(data: Dict[str, Any] = None) -> str:
         "• Risk:Reward minimal 1:1.5 atau 1:2\n"
         "• Jangan menambah posisi minus tanpa sistem\n"
         "• Hindari transaksi 15 menit sebelum/setelah high-impact news\n\n"
-        "<b>6. Uang Waktu yang Paling Aktif Gold</b>\n"
+        "<b>6. Waktu yang Paling Aktif Gold</b>\n"
         "• London (Buka 14:00 WIB) & New York (Buka 19:30–20:00 WIB)\n"
         "• Volatilitas tertinggi → peluang terbaik + risiko tertinggi\n"
         f"{rekomendasi}\n"
@@ -386,6 +384,7 @@ def format_strategi(data: Dict[str, Any] = None) -> str:
 def format_harga(data: Dict[str, Any]) -> str:
     if data.get("error"):
         return f"❌ {data['error']}"
+    
     change = data.get("change")
     change_pct = data.get("change_pct")
     if change is not None:
@@ -396,7 +395,6 @@ def format_harga(data: Dict[str, Any]) -> str:
     else:
         change_str = "-"
 
-    # Sumber tampilan: ganti nama file jadi "kebun saldo"
     src_label = data.get("source", "-")
     if src_label and "genesis_data" in str(src_label).lower():
         src_label = "Genesis EA (kebun saldo)"
@@ -404,25 +402,26 @@ def format_harga(data: Dict[str, Any]) -> str:
         src_label = "Genesis EA (kebun saldo)"
 
     lines = [
-    "💰 <b>Harga Gold (XAUUSD)</b>",
-    "━━━━━━━━━━━━━━━━━━━━",
-    "Harga sekarang",
-    f"Inti : <b>${data['price']:,.2f}</b>",
-]
+        "💰 <b>Harga Gold (XAUUSD)</b>",
+        "━━━━━━━━━━━━━━━━━━━━",
+        "Harga sekarang",
+        f"Inti : <b>${data['price']:,.2f}</b>",
+    ]
 
-if data.get("open") is not None:
-    lines.append(f"Awal                : ${data['open']:,.2f}")
-if data.get("high") is not None:
-    lines.append(f"Tinggi              : ${data['high']:,.2f}")
-if data.get("low") is not None:
-    lines.append(f"Rendah              : ${data['low']:,.2f}")
+    if data.get("open") is not None:
+        lines.append(f"Awal                : ${data['open']:,.2f}")
+    if data.get("high") is not None:
+        lines.append(f"Tinggi              : ${data['high']:,.2f}")
+    if data.get("low") is not None:
+        lines.append(f"Rendah              : ${data['low']:,.2f}")
 
-lines.append(f"Perubahan           : {change_str}")
-lines.append("━━━━━━━━━━━━━━━━━━━━")
-lines.append(f"🕐 {_h(data.get('time', '-'))}")
-lines.append(f"📡 {_h(src_label)}")
+    lines.append(f"Perubahan           : {change_str}")
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    lines.append(f"🕐 {_h(data.get('time', '-'))}")
+    lines.append(f"📡 {_h(src_label)}")
 
-return "\n".join(lines)
+    return "\n".join(lines)
+
 
 def format_mt5_genesis(data: Dict[str, Any]) -> str:
     """Tampilkan data faktual GT (tabel rapi seperti dashboard EA)."""
@@ -465,12 +464,6 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
         return d if isinstance(d, dict) else {}
 
     def hitung_atas_bawah(open_p, high, low, close, neto=None):
-        """
-        Atas  = poin kolom atas (high - max(open,close))
-                neto+ : inti→tinggi | neto- : awal→tinggi
-        Bawah = poin kolom bawah (min(open,close) - low)
-                neto+ : awal→rendah | neto- : inti→rendah
-        """
         try:
             o, h, l, c = float(open_p), float(high), float(low), float(close)
         except (TypeError, ValueError):
@@ -494,7 +487,6 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
     live_neto = data.get("neto") if data.get("neto") is not None else raw.get("neto")
     live_range = data.get("julat") if data.get("julat") is not None else raw.get("julat")
 
-    # Atas/Bawah LIVE: pakai ch/cl dari EA jika ada, else hitung
     live_atas = raw.get("ch")
     live_bawah = raw.get("cl")
     if live_atas is None or live_bawah is None:
@@ -507,7 +499,6 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
     def atas_bawah_bar(g):
         if not g:
             return None, None
-        # hitung dari OHLC bar
         return hitung_atas_bawah(g.get("open"), g.get("high"), g.get("low"), g.get("close"), g.get("neto"))
 
     a1, b1 = atas_bawah_bar(gt1)
@@ -543,7 +534,6 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
     bid = num(data.get("bid") or raw.get("bid"))
     ask = num(data.get("ask") or raw.get("ask"))
     spread = raw.get("spread") if raw.get("spread") is not None else data.get("spread")
-    # PERIOD_M1 → M1
     tf_raw = str(raw.get("timeframe") or "-")
     if tf_raw.startswith("PERIOD_"):
         tf_raw = tf_raw.replace("PERIOD_", "", 1)
@@ -565,7 +555,6 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
     eq_to_so = raw.get("eq_to_so") or "-"
     pts_to_so = raw.get("pts_to_so") or "-"
 
-    # Format Symbol P/L
     if symbol_pl is not None:
         try:
             pl_v = float(symbol_pl)
@@ -659,7 +648,7 @@ def format_sr(data: Dict[str, Any]) -> str:
         f"🟢 Lembah     : <b>${lem:,.2f}</b>\n"
         f"   Jarak       : {((price - lem) / price * 100):+.2f}%\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"<i>Dihitung dari tinggi/rendah 48 GT terakhir.</i>"
+        f"<i>Dihitung dari tinggi/rendah 48 bar terakhir.</i>"
     )
 
 
@@ -720,7 +709,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"• 📐 GT (data faktual dari EA)\n"
         f"• 📈 Arus\n"
         f"• 🎯 Sinyal\n"
-        f"• 📊 Puncak / Lembah\n"
+        f"• 📊 Puncak & Lembah\n"
         f"• 📰 Isu & Rumor\n"
         f"• 📚 Sistem & Strategi\n"
         f"• 📋 Ringkasan Lengkap\n\n"
@@ -738,11 +727,11 @@ async def bantuan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "❓ <b>Bantuan TanyaHargaBot</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         "<b>Menu yang tersedia:</b>\n"
-        "💰 <b>Harga Aktual</b> — Harga live + TABRANIJ\n"
+        "💰 <b>Harga Aktual</b> — Harga live\n"
         "📐 <b>GT</b> — Data faktual dari EA Genesis\n"
         "📈 <b>Arus</b> — Arah pasar (naik/turun/datar)\n"
         "🎯 <b>Sinyal</b> — Ide masuk sederhana + SL/TP\n"
-        "📊 <b>Puncak / Lembah</b> — Level penting\n"
+        "📊 <b>Puncak & Lembah</b> — Level penting\n"
         "📰 <b>Isu & Rumor</b> — Faktor yang sering gerakkan harga\n"
         "📚 <b>Sistem & Strategi</b> — Panduan sistem pemburuan + rekomendasi dinamis\n"
         "📋 <b>Ringkasan Lengkap</b> — Semua info sekaligus\n\n"
@@ -803,7 +792,6 @@ async def kirim_isu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def kirim_strategi(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handler fitur baru Sistem & Strategi."""
     msg = await update.message.reply_text("⏳ Menyusun sistem & strategi...")
     try:
         data = await _fetch_data(12)
@@ -875,17 +863,16 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     text = (update.message.text or "").strip()
     text_lower = text.lower()
 
-    # Tombol keyboard
     if text == "💰 Harga Aktual" or any(k in text_lower for k in ["harga", "price", "berapa"]):
         await kirim_harga(update, context)
     elif text == "📐 GT" or any(k in text_lower for k in ["mt5", "genesis", "broker", "faktual", "gt"]):
         await kirim_mt5(update, context)
-    elif text == "📈 Arus" or "arus" in text_lower or "arus" in text_lower:
-        await kirim_tren(update, context)
+    elif text == "📈 Arus" or "arus" in text_lower:
+        await kirim_arus(update, context)
     elif text == "🎯 Sinyal" or "sinyal" in text_lower or "signal" in text_lower:
         await kirim_sinyal(update, context)
-    elif text == "📊 Puncak / Lembah" or text_lower in ["pl", "s/r"] or "lembah" in text_lower or "puncak" in text_lower:
-        await kirim_sr(update, context)
+    elif text == "📊 Puncak & Lembah" or text_lower in ["pl", "s/r"] or "lembah" in text_lower or "puncak" in text_lower:
+        await kirim_pl(update, context)
     elif text == "📰 Isu & Rumor" or any(k in text_lower for k in ["isu", "rumor", "berita", "news"]):
         await kirim_isu(update, context)
     elif text == "📚 Sistem & Strategi" or any(k in text_lower for k in ["strategi", "sistem", "strategy", "system"]):
@@ -921,7 +908,6 @@ async def post_init(application: Application) -> None:
 
 
 def main() -> None:
-    # Perbaikan event loop Python 3.14 / Windows
     if sys.platform.startswith("win"):
         try:
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())

@@ -828,13 +828,27 @@ async def post_init(application: Application):
     application.job_queue.run_daily(daily_job, time=dtime(hour=1, minute=0))
 
 def main():
+    # Perbaikan khusus untuk Python 3.10+ / 3.14 di Windows
     if sys.platform.startswith("win"):
         try:
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         except Exception:
             pass
 
-    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    app = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .post_init(post_init)
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", bantuan))
@@ -856,6 +870,7 @@ def main():
 
     logger.info("TanyaHargaBot (Full Features) mulai berjalan...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
+
 
 if __name__ == "__main__":
     main()

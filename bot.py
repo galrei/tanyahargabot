@@ -350,7 +350,7 @@ def format_strategi(data: Dict[str, Any] = None) -> str:
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         "<b>1. Sistem Mengikuti Arus</b>\n"
         "• Ikuti arah arus utama (H1/H4/D1)\n"
-        "• Masuk: harga saat mundur naik atau turun / perhentian bawah-atas dinamis\n"
+        "• Masuk: harga saat mundur naik atau turun / puncak-lembah dinamis\n"
         "• SL: di luar struktur terakhir\n"
         "• Cocok saat pasar berarus kuat\n\n"
         "<b>2. Strategi Trobosan</b>\n"
@@ -358,18 +358,18 @@ def format_strategi(data: Dict[str, Any] = None) -> str:
         "• Konfirmasi: GT kuat + volume/momentum\n"
         "• Masuk setelah pengujian (lebih aman)\n"
         "• SL: di dalam level yang ditembus\n\n"
-        "<b>3. Strategi Bergelombang (Julat)</b>\n"
-        "• Buy di perhentian bawah, Sell di perhentian atas\n"
+        "<b>3. Strategi Gelombang Datar (Julat)</b>\n"
+        "• Buy di lembah, Sell di puncak\n"
         "• Target: harga tengah atau sisi lawan\n"
         "• Sangat cocok saat GT menunjukkan julat sempit / mendatar\n\n"
         "<b>4. Mancing dengan Data GT</b>\n"
-        "• Gunakan tabel GT (Atas/Bawah/Neto/Julat)\n"
+        "• Gunakan tabel GT (Tinggi?Atas/Bawah/Rendah/Awal/Neto/Inti/Julat)\n"
         "• Entry cepat di M1-M5 saat neto jelas + harga di ekstrem\n"
         "• Risk sangat ketat (5-15 poin)\n\n"
         "<b>5. Risk Management (WAJIB)</b>\n"
         "• Risk per transaksi maksimal 1–2% equity\n"
         "• Risk:Reward minimal 1:1.5 atau 1:2\n"
-        "• Jangan berlayer minus tanpa sistem\n"
+        "• Jangan menambah posisi minus tanpa sistem\n"
         "• Hindari transaksi 15 menit sebelum/setelah high-impact news\n\n"
         "<b>6. Uang Waktu yang Paling Aktif Gold</b>\n"
         "• London (Buka 14:00 WIB) & New York (Buka 19:30–20:00 WIB)\n"
@@ -377,7 +377,7 @@ def format_strategi(data: Dict[str, Any] = None) -> str:
         f"{rekomendasi}\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "⚠️ <i>Ini hanya edukasi & ide. Bukan saran finansial. "
-        "Selalu sesuaikan dengan gaya pesaldo & pengaturan risiko-mu sendiri.</i>"
+        "Selalu sesuaikan dengan gaya pemburuan saldo & pengaturan risiko-mu sendiri.</i>"
     )
     return text
 
@@ -406,7 +406,9 @@ def format_harga(data: Dict[str, Any]) -> str:
     lines = [
         "💰 <b>Harga Gold (XAUUSD)</b>",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"Harga sekarang/Inti : <b>${data['price']:,.2f}</b>",
+        f"Harga sekarang
+        
+        Inti : <b>${data['price']:,.2f}</b>",
     ]
     if data.get("open") is not None:
         lines.append(f"Awal                : ${data['open']:,.2f}")
@@ -613,11 +615,11 @@ def format_tren(data: Dict[str, Any]) -> str:
     if data.get("error"):
         return f"❌ {data['error']}"
     return (
-        f"📈 <b>Analisis Tren Gold</b>\n"
+        f"📈 <b>Analisis Arus Gold</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"Harga   : <b>${data['price']:,.2f}</b>\n"
-        f"Tren    : <b>{data['trend']}</b>\n"
-        f"Keterangan : {data['trend_desc']}\n"
+        f"Arus    : <b>{data['arus']}</b>\n"
+        f"Keterangan : {data['arus_desc']}\n"
         f"Perubahan  : {data['change']:+.2f} ({data['change_pct']:+.3f}%)\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"<i>Berdasarkan Moving Average periode pendek vs panjang.</i>"
@@ -629,10 +631,10 @@ def format_sinyal(data: Dict[str, Any]) -> str:
         return f"❌ {data['error']}"
     sinyal_text = buat_sinyal(data)
     return (
-        f"🎯 <b>Sinyal Trading Gold</b>\n"
+        f"🎯 <b>Sinyal Transaksi Gold</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"Harga : <b>${data['price']:,.2f}</b>\n"
-        f"Tren  : {data['trend']}\n\n"
+        f"Arus  : {data['arus']}\n\n"
         f"{sinyal_text}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"⚠️ <i>Bukan saran finansial. Gunakan risk management.</i>"
@@ -643,20 +645,20 @@ def format_sr(data: Dict[str, Any]) -> str:
     if data.get("error"):
         return f"❌ {data['error']}"
     price = data["price"]
-    sup = data["support"]
-    res = data["resistance"]
+    lem = data["lembah"]
+    pun = data["puncak"]
     mid = data["mid"]
     return (
-        f"📊 <b>Support & Resistance</b>\n"
+        f"📊 <b>Puncak & Lembah</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"Harga sekarang : <b>${price:,.2f}</b>\n\n"
-        f"🔴 Resistance  : <b>${res:,.2f}</b>\n"
-        f"   Jarak       : {((res - price) / price * 100):+.2f}%\n\n"
+        f"🔴 Puncak  : <b>${pun:,.2f}</b>\n"
+        f"   Jarak       : {((pun - price) / price * 100):+.2f}%\n\n"
         f"⚪ Midpoint    : ${mid:,.2f}\n\n"
-        f"🟢 Support     : <b>${sup:,.2f}</b>\n"
-        f"   Jarak       : {((price - sup) / price * 100):+.2f}%\n"
+        f"🟢 Lembah     : <b>${lem:,.2f}</b>\n"
+        f"   Jarak       : {((price - lem) / price * 100):+.2f}%\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"<i>Dihitung dari high/low 48 GT terakhir.</i>"
+        f"<i>Dihitung dari tinggi/rendah 48 GT terakhir.</i>"
     )
 
 
@@ -694,11 +696,11 @@ def format_full(data: Dict[str, Any]) -> str:
         f"   High   : ${n(data.get('high'))}\n"
         f"   Low    : ${n(data.get('low'))}\n"
         f"   Change : {ch_str}\n\n"
-        f"📈 Tren   : <b>{_h(data.get('trend'))}</b>\n"
-        f"   {_h(data.get('trend_desc'))}\n\n"
+        f"📈 Arus   : <b>{_h(data.get('arus'))}</b>\n"
+        f"   {_h(data.get('arus_desc'))}\n\n"
         f"📊 S/R\n"
-        f"   Resistance : ${n(data.get('resistance'))}\n"
-        f"   Support    : ${n(data.get('support'))}\n\n"
+        f"   Puncak : ${n(data.get('puncak'))}\n"
+        f"   Lembah    : ${n(data.get('lembah'))}\n\n"
         f"{sinyal_text}\n\n"
         f"🕐 {_h(data.get('time'))}\n"
         f"⚠️ Bukan saran finansial."
@@ -708,20 +710,20 @@ def format_full(data: Dict[str, Any]) -> str:
 # ==================== HANDLERS ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
-    nama = user.first_name or "Trader"
+    nama = user.first_name or "Pemburu"
     text = (
         f"Halo <b>{nama}</b>! 👋\n\n"
-        f"Saya <b>TanyaHargaBot</b> — temanmu untuk pantau harga <b>Gold (XAUUSD)</b>.\n\n"
+        f"Saya <b>TanyaHargaBot</b> — alat untuk pantau harga <b>Gold (XAUUSD)</b>.\n\n"
         f"Pilih menu di bawah:\n"
         f"• 💰 Harga Aktual\n"
         f"• 📐 GT (data faktual dari EA)\n"
-        f"• 📈 Tren\n"
+        f"• 📈 Arus\n"
         f"• 🎯 Sinyal\n"
-        f"• 📊 Support / Resistance\n"
+        f"• 📊 Puncak / Lembah\n"
         f"• 📰 Isu & Rumor\n"
         f"• 📚 Sistem & Strategi\n"
         f"• 📋 Ringkasan Lengkap\n\n"
-        f"Semoga trading-mu cuan 🙏"
+        f"Semoga pemburuan saldo-mu menyenangkan 🙏"
     )
     await update.message.reply_text(
         text,
@@ -737,14 +739,14 @@ async def bantuan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "<b>Menu yang tersedia:</b>\n"
         "💰 <b>Harga Aktual</b> — Harga live + TABRANIJ\n"
         "📐 <b>GT</b> — Data faktual dari EA Genesis\n"
-        "📈 <b>Tren</b> — Arah pasar (bullish/bearish/sideways)\n"
-        "🎯 <b>Sinyal</b> — Ide entry sederhana + SL/TP\n"
-        "📊 <b>Support / Resistance</b> — Level penting\n"
+        "📈 <b>Arus</b> — Arah pasar (naik/turun/datar)\n"
+        "🎯 <b>Sinyal</b> — Ide masuk sederhana + SL/TP\n"
+        "📊 <b>Puncak / Lembah</b> — Level penting\n"
         "📰 <b>Isu & Rumor</b> — Faktor yang sering gerakkan harga\n"
-        "📚 <b>Sistem & Strategi</b> — Panduan sistem trading + rekomendasi dinamis\n"
+        "📚 <b>Sistem & Strategi</b> — Panduan sistem pemburuan + rekomendasi dinamis\n"
         "📋 <b>Ringkasan Lengkap</b> — Semua info sekaligus\n\n"
         "<b>Perintah teks:</b>\n"
-        "<code>/start /harga /tren /sinyal /sr /isu /strategi /full /help</code>\n\n"
+        "<code>/start /harga /arus /sinyal /pl /isu /strategi /full /help</code>\n\n"
         "Data dari Yahoo Finance / MT5 Genesis.\n"
         "⚠️ Bukan saran finansial. Selalu pakai risk management."
     )
@@ -764,8 +766,8 @@ async def kirim_harga(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await msg.edit_text(f"❌ Gagal: {e}", reply_markup=tombol_aksi())
 
 
-async def kirim_tren(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    msg = await update.message.reply_text("⏳ Menganalisis tren...")
+async def kirim_arus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    msg = await update.message.reply_text("⏳ Menganalisis arus...")
     try:
         data = await _fetch_data(12)
         await msg.edit_text(format_tren(data), parse_mode="HTML", reply_markup=tombol_aksi())
@@ -782,8 +784,8 @@ async def kirim_sinyal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await msg.edit_text(f"❌ Gagal: {e}", reply_markup=tombol_aksi())
 
 
-async def kirim_sr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    msg = await update.message.reply_text("⏳ Menghitung Support & Resistance...")
+async def kirim_pl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    msg = await update.message.reply_text("⏳ Menghitung Puncak & Lembah...")
     try:
         data = await _fetch_data(12)
         await msg.edit_text(format_sr(data), parse_mode="HTML", reply_markup=tombol_aksi())
@@ -846,11 +848,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 text = format_harga(data)
             elif data_key == "mt5":
                 text = format_mt5_genesis(data)
-            elif data_key == "tren":
+            elif data_key == "arus":
                 text = format_tren(data)
             elif data_key == "sinyal":
                 text = format_sinyal(data)
-            elif data_key == "sr":
+            elif data_key == "pl":
                 text = format_sr(data)
             elif data_key == "strategi":
                 text = format_strategi(data)
@@ -877,11 +879,11 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await kirim_harga(update, context)
     elif text == "📐 GT" or any(k in text_lower for k in ["mt5", "genesis", "broker", "faktual", "gt"]):
         await kirim_mt5(update, context)
-    elif text == "📈 Tren" or "tren" in text_lower or "trend" in text_lower:
+    elif text == "📈 Arus" or "arus" in text_lower or "arus" in text_lower:
         await kirim_tren(update, context)
     elif text == "🎯 Sinyal" or "sinyal" in text_lower or "signal" in text_lower:
         await kirim_sinyal(update, context)
-    elif text == "📊 Support / Resistance" or text_lower in ["sr", "s/r"] or "support" in text_lower or "resistance" in text_lower:
+    elif text == "📊 Puncak / Lembah" or text_lower in ["pl", "s/r"] or "lembah" in text_lower or "puncak" in text_lower:
         await kirim_sr(update, context)
     elif text == "📰 Isu & Rumor" or any(k in text_lower for k in ["isu", "rumor", "berita", "news"]):
         await kirim_isu(update, context)
@@ -894,7 +896,7 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     else:
         await update.message.reply_text(
             "Pilih menu di bawah atau ketik:\n"
-            "💰 Harga · 📐 GT · 📈 Tren · 🎯 Sinyal · 📊 S/R · 📰 Isu · 📚 Strategi · 📋 Lengkap",
+            "💰 Harga · 📐 GT · 📈 Arus · 🎯 Sinyal · 📊 P/L · 📰 Isu · 📚 Strategi · 📋 Lengkap",
             reply_markup=menu_utama(),
         )
 
@@ -906,11 +908,11 @@ async def post_init(application: Application) -> None:
         BotCommand("harga", "Harga aktual gold"),
         BotCommand("mt5", "Data faktual GT"),
         BotCommand("gt", "Data faktual GT"),
-        BotCommand("tren", "Analisis tren"),
-        BotCommand("sinyal", "Sinyal trading"),
-        BotCommand("sr", "Support & Resistance"),
+        BotCommand("arus", "Analisis arus"),
+        BotCommand("sinyal", "Sinyal transaksi"),
+        BotCommand("pl", "Puncak & Lembah"),
         BotCommand("isu", "Isu & rumor pasar"),
-        BotCommand("strategi", "Sistem & strategi trading"),
+        BotCommand("strategi", "Sistem & strategi transaksi"),
         BotCommand("full", "Ringkasan lengkap"),
         BotCommand("help", "Bantuan"),
     ]
@@ -944,9 +946,9 @@ def main() -> None:
     app.add_handler(CommandHandler("harga", kirim_harga))
     app.add_handler(CommandHandler("mt5", kirim_mt5))
     app.add_handler(CommandHandler("gt", kirim_mt5))
-    app.add_handler(CommandHandler("tren", kirim_tren))
+    app.add_handler(CommandHandler("arus", kirim_arus))
     app.add_handler(CommandHandler("sinyal", kirim_sinyal))
-    app.add_handler(CommandHandler("sr", kirim_sr))
+    app.add_handler(CommandHandler("pl", kirim_pl))
     app.add_handler(CommandHandler("isu", kirim_isu))
     app.add_handler(CommandHandler("strategi", kirim_strategi))
     app.add_handler(CommandHandler("full", kirim_full))

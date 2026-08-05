@@ -404,24 +404,25 @@ def format_harga(data: Dict[str, Any]) -> str:
         src_label = "Genesis EA (kebun saldo)"
 
     lines = [
-        "💰 <b>Harga Gold (XAUUSD)</b>",
-        "━━━━━━━━━━━━━━━━━━━━",
-        f"Harga sekarang
-        
-        Inti : <b>${data['price']:,.2f}</b>",
-    ]
-    if data.get("open") is not None:
-        lines.append(f"Awal                : ${data['open']:,.2f}")
-    if data.get("high") is not None:
-        lines.append(f"Tinggi              : ${data['high']:,.2f}")
-    if data.get("low") is not None:
-        lines.append(f"Rendah              : ${data['low']:,.2f}")
-    lines.append(f"Perubahan           : {change_str}")
-    lines.append("━━━━━━━━━━━━━━━━━━━━")
-    lines.append(f"🕐 {_h(data.get('time', '-'))}")
-    lines.append(f"📡 {_h(src_label)}")
-    return "\n".join(lines)
+    "💰 <b>Harga Gold (XAUUSD)</b>",
+    "━━━━━━━━━━━━━━━━━━━━",
+    "Harga sekarang",
+    f"Inti : <b>${data['price']:,.2f}</b>",
+]
 
+if data.get("open") is not None:
+    lines.append(f"Awal                : ${data['open']:,.2f}")
+if data.get("high") is not None:
+    lines.append(f"Tinggi              : ${data['high']:,.2f}")
+if data.get("low") is not None:
+    lines.append(f"Rendah              : ${data['low']:,.2f}")
+
+lines.append(f"Perubahan           : {change_str}")
+lines.append("━━━━━━━━━━━━━━━━━━━━")
+lines.append(f"🕐 {_h(data.get('time', '-'))}")
+lines.append(f"📡 {_h(src_label)}")
+
+return "\n".join(lines)
 
 def format_mt5_genesis(data: Dict[str, Any]) -> str:
     """Tampilkan data faktual GT (tabel rapi seperti dashboard EA)."""

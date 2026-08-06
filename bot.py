@@ -3,6 +3,7 @@
 # Format 100% sesuai spesifikasi (tanpa $, tanpa koma, Neto ▲/▼)
 
 from __future__ import annotations
+import asyncio
 import logging
 import os
 import sys
@@ -262,8 +263,24 @@ def main():
     logger.info("Bot @tanyahargabot starting…")
     print("✅ Token ditemukan. Bot sedang berjalan...")
     print("   Tekan Ctrl+C untuk menghentikan.")
+
+    # Fix Python 3.12+ / 3.14: pastikan ada event loop di main thread
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError("loop closed")
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
+    # Windows + Python 3.14: gunakan SelectorEventLoop agar stabil
+    if sys.platform == "win32":
+        try:
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        except Exception:
+            pass
     main()

@@ -1,147 +1,232 @@
-# mt5_helper.py
-# Pengambilan data XAUUSD dari MT5 + Genesis EA (genesis_data.json)
-# Fallback ke yfinance jika MT5 / file tidak tersedia
+"""
+Helper untuk mengambil data dari MetaTrader 5 + file Genesis EA.
+"""
 
-from __future__ import annotations
-import json
 import os
-from pathlib import Path
-from typing import Any, Dict, Optional
+import json
+import logging
 from datetime import datetime
+from typing import Optional, Dict, Any
+from pathlib import Path
 
-# Path file yang ditulis oleh EA Genesis
-GENESIS_JSON_CANDIDATES = [
-    Path("/home/workdir/artifacts/genesis_data.json"),
+logger = logging.getLogger(__name__)
+
+# Path default tempat EA Genesis menulis data
+# Sesuaikan jika folder Data MT5 kamu berbeda
+GENESIS_FILE_CANDIDATES = [
+    # Common Terminal paths (Windows)
+    Path(os.environ.get("APPDATA", "")) / "MetaQuotes" / "Terminal",
+    Path("C:/Users") / os.environ.get("USERNAME", "") / "AppData" / "Roaming" / "MetaQuotes" / "Terminal",
+    # Relative / custom
     Path("genesis_data.json"),
     Path("MQL5/Files/genesis_data.json"),
-    Path(os.path.expanduser("~/genesis_data.json")),
+    Path("Files/genesis_data.json"),
 ]
 
 
-def _read_genesis_json() -> Optional[Dict[str, Any]]:
-    for p in GENESIS_JSON_CANDIDATES:
-        try:
-            if p.exists():
-                with open(p, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if isinstance(data, dict) and data:
-                    return data
-        except Exception:
-            continue
+def _find_genesis_file() -> Optional[Path]:
+    """Cari file data Genesis di lokasi umum."""
+    # 1. Cek di folder bot dulu
+    local = Path("genesis_data.json")
+    if local.exists():
+        return local
+
+    # 2. Cek environment variable
+    env_path = os.getenv("GENESIS_DATA_PATH")
+    if env_path and Path(env_path).exists():
+        return Path(env_path)
+
+    appdata = Path(os.environ.get("APPDATA", ""))
+
+    # 3. Common\Files (FILE_COMMON di MQL5) — lokasi utama dari EA
+    common_files = appdata / "MetaQuotes" / "Terminal" / "Common" / "Files" / "genesis_data.json"
+    if common_files.exists():
+        return common_files
+
+    # 4. Cari di setiap folder Terminal MT5
+    terminal_root = appdata / "MetaQuotes" / "Terminal"
+    if terminal_root.exists():
+        for terminal_dir in terminal_root.iterdir():
+            if not terminal_dir.is_dir():
+                continue
+            for candidate in [
+                terminal_dir / "MQL5" / "Files" / "genesis_data.json",
+                terminal_dir / "MQL5" / "Files" / "Genesis.json",
+                terminal_dir / "MQL5" / "Files" / "genesis.txt",
+            ]:
+                if candidate.exists():
+                    return candidate
+
     return None
 
 
-def _try_mt5() -> Optional[Dict[str, Any]]:
-    """Coba ambil data langsung dari MetaTrader5 (jika library + terminal tersedia)"""
+def baca_genesis() -> Optional[Dict[str, Any]]:
+    """
+    Baca data dari file yang ditulis EA Genesis.
+    """
+    path = _find_genesis_file()
+    if not path:
+        return None
+
     try:
-        import MetaTrader5 as mt5
-        if not mt5.initialize():
+        text = path.read_text(encoding="utf-8", errors="ignore").strip()
+        if not text:
             return None
 
-        symbol = "XAUUSD"
-        tick = mt5.symbol_info_tick(symbol)
-        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, 1)
+        # Coba JSON dulu
+        if text.startswith("{"):
+            data = json.loads(text)
+            data["_source"] = f"Genesis EA (kebun saldo)"
+            data["_file"] = str(path)
+            return data
 
-        mt5.shutdown()
+        # Fallback: format key=value per baris
+        data = {}
+        for line in text.splitlines():
+            line = line.strip()
+            if "=" in line:
+                k, v = line.split("=", 1)
+                k = k.strip().lower()
+                v = v.strip()
+                try:
+                    data[k] = float(v.replace(",", ""))
+                except ValueError:
+                    data[k] = v
+        if data:
+            data["_source"] = f"Genesis EA (kebun saldo)"
+            data["_file"] = str(path)
+            return data
+    except Exception as e:
+        logger.error(f"Gagal baca Genesis file: {e}")
+    return None
+
+
+def get_mt5_price(symbol: str = "XAUUSD") -> Optional[Dict[str, Any]]:
+    """Ambil harga langsung dari terminal MT5 yang sedang login."""
+    try:
+        import MetaTrader5 as mt5
+    except ImportError:
+        logger.warning("MetaTrader5 belum terinstall. Jalankan: pip install MetaTrader5")
+        return None
+
+    if not mt5.initialize():
+        logger.warning(f"MT5 initialize gagal: {mt5.last_error()}")
+        return None
+
+    try:
+        candidates = [symbol, "XAUUSD", "XAUUSD.", "XAUUSD.a", "GOLD", "Gold"]
+        tick = None
+        used_symbol = None
+        for sym in candidates:
+            t = mt5.symbol_info_tick(sym)
+            if t is not None:
+                tick = t
+                used_symbol = sym
+                break
 
         if tick is None:
+            logger.warning("Tidak menemukan simbol gold di MT5")
             return None
 
-        out = {
-            "bid": float(tick.bid),
-            "ask": float(tick.ask),
-            "time": datetime.fromtimestamp(tick.time).strftime("%H:%M"),
-            "source": "MT5",
+        info = mt5.symbol_info(used_symbol)
+        rates = mt5.copy_rates_from_pos(used_symbol, mt5.TIMEFRAME_H1, 0, 50)
+
+        result = {
+            "symbol": used_symbol,
+            "bid": round(tick.bid, 2),
+            "ask": round(tick.ask, 2),
+            "price": round((tick.bid + tick.ask) / 2, 2),
+            "spread": round(tick.ask - tick.bid, 2),
+            "time": datetime.fromtimestamp(tick.time).strftime("%d/%m/%Y %H:%M:%S"),
+            "source": "MetaTrader 5 (broker)",
         }
+
         if rates is not None and len(rates) > 0:
-            r = rates[0]
-            out.update({
-                "open": float(r["open"]),
-                "high": float(r["high"]),
-                "low": float(r["low"]),
-                "close": float(r["close"]),
-            })
-        return out
-    except Exception:
+            last = rates[-1]
+            result["open"] = round(float(last["open"]), 2)
+            result["high"] = round(float(last["high"]), 2)
+            result["low"] = round(float(last["low"]), 2)
+            result["close"] = round(float(last["close"]), 2)
+
+            highs = [float(r["high"]) for r in rates]
+            lows = [float(r["low"]) for r in rates]
+            result["resistance"] = round(max(highs), 2)
+            result["support"] = round(min(lows), 2)
+
+        if info:
+            result["digits"] = info.digits
+            result["point"] = info.point
+
+        return result
+    except Exception as e:
+        logger.error(f"Error MT5: {e}")
         return None
+    finally:
+        mt5.shutdown()
 
 
-def _try_yfinance() -> Optional[Dict[str, Any]]:
-    """Fallback Yahoo Finance"""
-    try:
-        import yfinance as yf
-        t = yf.Ticker("GC=F")  # Gold futures
-        hist = t.history(period="1d", interval="1m")
-        if hist.empty:
-            return None
-        last = hist.iloc[-1]
-        info = t.info or {}
-        return {
-            "bid": float(last["Close"]),
-            "ask": float(last["Close"]),
-            "open": float(last["Open"]),
-            "high": float(last["High"]),
-            "low": float(last["Low"]),
-            "close": float(last["Close"]),
-            "time": last.name.strftime("%H:%M") if hasattr(last.name, "strftime") else "—",
-            "source": "Yahoo",
-        }
-    except Exception:
-        return None
-
-
-def get_gold_data() -> Dict[str, Any]:
+def get_harga_lengkap(symbol: str = "XAUUSD") -> Dict[str, Any]:
     """
-    Prioritas:
-    1. genesis_data.json (dari EA Genesis)
-    2. MetaTrader5 live
-    3. yfinance
+    Prioritas data:
+    1. File Genesis EA (paling lengkap & faktual dari EA kamu)
+    2. MT5 terminal (harga real broker)
+    3. None (biar bot pakai Yahoo Finance)
     """
     # 1. Genesis EA
-    genesis = _read_genesis_json()
+    genesis = baca_genesis()
     if genesis:
-        # pastikan ada key yang dibutuhkan signal_engine
-        if "waktu" not in genesis and "time" in genesis:
-            genesis["waktu"] = genesis["time"]
-        genesis["source"] = "Genesis EA"
-        return genesis
+        out = {
+            "source": genesis.get("_source", "Genesis EA"),
+            "symbol": genesis.get("symbol", symbol),
+            "price": _num(genesis, ["price", "close", "bid", "harga"]),
+            "bid": _num(genesis, ["bid"]),
+            "ask": _num(genesis, ["ask"]),
+            "open": _num(genesis, ["open", "awal", "open_price"]),
+            "high": _num(genesis, ["high", "tinggi", "max"]),
+            "low": _num(genesis, ["low", "bawah", "rendah", "min"]),
+            "close": _num(genesis, ["close", "price"]),
+            "neto": _num(genesis, ["neto", "net", "change", "selisih"]),
+            "inti": _num(genesis, ["inti", "core", "pivot", "mid"]),
+            "jangkauan": _num(genesis, ["jangkauan", "range", "rng"]),
+            "tinggi": _num(genesis, ["tinggi", "high"]),
+            "bawah": _num(genesis, ["bawah", "low", "rendah"]),
+            "awal": _num(genesis, ["awal", "open"]),
+            "time": genesis.get("time") or genesis.get("waktu") or datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            "raw": genesis,
+        }
+        if out["price"] is None and out["bid"] and out["ask"]:
+            out["price"] = round((out["bid"] + out["ask"]) / 2, 2)
+        if out["jangkauan"] is None and out["high"] and out["low"]:
+            out["jangkauan"] = round(out["high"] - out["low"], 2)
+        if out["neto"] is None and out["close"] and out["open"]:
+            out["neto"] = round(out["close"] - out["open"], 2)
+        return out
 
-    # 2. MT5
-    mt5_data = _try_mt5()
+    # 2. MT5 langsung
+    mt5_data = get_mt5_price(symbol)
     if mt5_data:
+        mt5_data["neto"] = None
+        mt5_data["inti"] = None
+        mt5_data["jangkauan"] = None
+        if mt5_data.get("high") and mt5_data.get("low"):
+            mt5_data["jangkauan"] = round(mt5_data["high"] - mt5_data["low"], 2)
+        if mt5_data.get("close") and mt5_data.get("open"):
+            mt5_data["neto"] = round(mt5_data["close"] - mt5_data["open"], 2)
+        if mt5_data.get("high") and mt5_data.get("low"):
+            mt5_data["inti"] = round((mt5_data["high"] + mt5_data["low"]) / 2, 2)
+        mt5_data["tinggi"] = mt5_data.get("high")
+        mt5_data["bawah"] = mt5_data.get("low")
+        mt5_data["awal"] = mt5_data.get("open")
         return mt5_data
 
-    # 3. Yahoo
-    yf_data = _try_yfinance()
-    if yf_data:
-        return yf_data
-
-    # Fallback kosong
-    return {
-        "bid": None,
-        "ask": None,
-        "source": "none",
-        "waktu": "—",
-    }
+    return {}
 
 
-def get_account_info() -> Dict[str, Any]:
-    """Info akun MT5 (balance, equity, margin) – untuk risk management nanti"""
-    try:
-        import MetaTrader5 as mt5
-        if not mt5.initialize():
-            return {}
-        info = mt5.account_info()
-        mt5.shutdown()
-        if info is None:
-            return {}
-        return {
-            "balance": float(info.balance),
-            "equity": float(info.equity),
-            "margin": float(info.margin),
-            "free_margin": float(info.margin_free),
-            "leverage": int(info.leverage),
-            "currency": info.currency,
-        }
-    except Exception:
-        return {}
+def _num(d: dict, keys: list) -> Optional[float]:
+    for k in keys:
+        if k in d and d[k] is not None:
+            try:
+                return float(d[k])
+            except (TypeError, ValueError):
+                continue
+    return None

@@ -11,13 +11,9 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Path default tempat EA Genesis menulis data
-# Sesuaikan jika folder Data MT5 kamu berbeda
 GENESIS_FILE_CANDIDATES = [
-    # Common Terminal paths (Windows)
     Path(os.environ.get("APPDATA", "")) / "MetaQuotes" / "Terminal",
     Path("C:/Users") / os.environ.get("USERNAME", "") / "AppData" / "Roaming" / "MetaQuotes" / "Terminal",
-    # Relative / custom
     Path("genesis_data.json"),
     Path("MQL5/Files/genesis_data.json"),
     Path("Files/genesis_data.json"),
@@ -25,25 +21,19 @@ GENESIS_FILE_CANDIDATES = [
 
 
 def _find_genesis_file() -> Optional[Path]:
-    """Cari file data Genesis di lokasi umum."""
-    # 1. Cek di folder bot dulu
     local = Path("genesis_data.json")
     if local.exists():
         return local
 
-    # 2. Cek environment variable
     env_path = os.getenv("GENESIS_DATA_PATH")
     if env_path and Path(env_path).exists():
         return Path(env_path)
 
     appdata = Path(os.environ.get("APPDATA", ""))
-
-    # 3. Common\Files (FILE_COMMON di MQL5) — lokasi utama dari EA
     common_files = appdata / "MetaQuotes" / "Terminal" / "Common" / "Files" / "genesis_data.json"
     if common_files.exists():
         return common_files
 
-    # 4. Cari di setiap folder Terminal MT5
     terminal_root = appdata / "MetaQuotes" / "Terminal"
     if terminal_root.exists():
         for terminal_dir in terminal_root.iterdir():
@@ -56,31 +46,22 @@ def _find_genesis_file() -> Optional[Path]:
             ]:
                 if candidate.exists():
                     return candidate
-
     return None
 
 
 def baca_genesis() -> Optional[Dict[str, Any]]:
-    """
-    Baca data dari file yang ditulis EA Genesis.
-    """
     path = _find_genesis_file()
     if not path:
         return None
-
     try:
         text = path.read_text(encoding="utf-8", errors="ignore").strip()
         if not text:
             return None
-
-        # Coba JSON dulu
         if text.startswith("{"):
             data = json.loads(text)
-            data["_source"] = f"Genesis EA (kebun saldo)"
+            data["_source"] = "Genesis EA (kebun saldo)"
             data["_file"] = str(path)
             return data
-
-        # Fallback: format key=value per baris
         data = {}
         for line in text.splitlines():
             line = line.strip()
@@ -93,7 +74,7 @@ def baca_genesis() -> Optional[Dict[str, Any]]:
                 except ValueError:
                     data[k] = v
         if data:
-            data["_source"] = f"Genesis EA (kebun saldo)"
+            data["_source"] = "Genesis EA (kebun saldo)"
             data["_file"] = str(path)
             return data
     except Exception as e:
@@ -102,17 +83,14 @@ def baca_genesis() -> Optional[Dict[str, Any]]:
 
 
 def get_mt5_price(symbol: str = "XAUUSD") -> Optional[Dict[str, Any]]:
-    """Ambil harga langsung dari terminal MT5 yang sedang login."""
     try:
         import MetaTrader5 as mt5
     except ImportError:
         logger.warning("MetaTrader5 belum terinstall. Jalankan: pip install MetaTrader5")
         return None
-
     if not mt5.initialize():
         logger.warning(f"MT5 initialize gagal: {mt5.last_error()}")
         return None
-
     try:
         candidates = [symbol, "XAUUSD", "XAUUSD.", "XAUUSD.a", "GOLD", "Gold"]
         tick = None
@@ -123,14 +101,11 @@ def get_mt5_price(symbol: str = "XAUUSD") -> Optional[Dict[str, Any]]:
                 tick = t
                 used_symbol = sym
                 break
-
         if tick is None:
             logger.warning("Tidak menemukan simbol gold di MT5")
             return None
-
         info = mt5.symbol_info(used_symbol)
         rates = mt5.copy_rates_from_pos(used_symbol, mt5.TIMEFRAME_H1, 0, 50)
-
         result = {
             "symbol": used_symbol,
             "bid": round(tick.bid, 2),
@@ -140,23 +115,19 @@ def get_mt5_price(symbol: str = "XAUUSD") -> Optional[Dict[str, Any]]:
             "time": datetime.fromtimestamp(tick.time).strftime("%d/%m/%Y %H:%M:%S"),
             "source": "MetaTrader 5 (broker)",
         }
-
         if rates is not None and len(rates) > 0:
             last = rates[-1]
             result["open"] = round(float(last["open"]), 2)
             result["high"] = round(float(last["high"]), 2)
             result["low"] = round(float(last["low"]), 2)
             result["close"] = round(float(last["close"]), 2)
-
             highs = [float(r["high"]) for r in rates]
             lows = [float(r["low"]) for r in rates]
             result["resistance"] = round(max(highs), 2)
             result["support"] = round(min(lows), 2)
-
         if info:
             result["digits"] = info.digits
             result["point"] = info.point
-
         return result
     except Exception as e:
         logger.error(f"Error MT5: {e}")
@@ -166,13 +137,6 @@ def get_mt5_price(symbol: str = "XAUUSD") -> Optional[Dict[str, Any]]:
 
 
 def get_harga_lengkap(symbol: str = "XAUUSD") -> Dict[str, Any]:
-    """
-    Prioritas data:
-    1. File Genesis EA (paling lengkap & faktual dari EA kamu)
-    2. MT5 terminal (harga real broker)
-    3. None (biar bot pakai Yahoo Finance)
-    """
-    # 1. Genesis EA
     genesis = baca_genesis()
     if genesis:
         out = {
@@ -202,7 +166,6 @@ def get_harga_lengkap(symbol: str = "XAUUSD") -> Dict[str, Any]:
             out["neto"] = round(out["close"] - out["open"], 2)
         return out
 
-    # 2. MT5 langsung
     mt5_data = get_mt5_price(symbol)
     if mt5_data:
         mt5_data["neto"] = None
@@ -218,7 +181,6 @@ def get_harga_lengkap(symbol: str = "XAUUSD") -> Dict[str, Any]:
         mt5_data["bawah"] = mt5_data.get("low")
         mt5_data["awal"] = mt5_data.get("open")
         return mt5_data
-
     return {}
 
 
@@ -230,3 +192,40 @@ def _num(d: dict, keys: list) -> Optional[float]:
             except (TypeError, ValueError):
                 continue
     return None
+
+
+def get_gold_data(symbol: str = "XAUUSD") -> Dict[str, Any]:
+    """Alias agar bot singkat & lengkap sama-sama bisa jalan."""
+    data = get_harga_lengkap(symbol)
+    if not data:
+        return {"bid": None, "ask": None, "source": "none", "waktu": "—", "price": None}
+    out = dict(data)
+    if "waktu" not in out and "time" in out:
+        out["waktu"] = out["time"]
+    if out.get("bid") is None and out.get("price") is not None:
+        out["bid"] = out["price"]
+    if "julat" not in out and out.get("jangkauan") is not None:
+        out["julat"] = out["jangkauan"]
+    return out
+
+
+def get_account_info() -> Dict[str, Any]:
+    """Info akun MT5 untuk menu status."""
+    try:
+        import MetaTrader5 as mt5
+        if not mt5.initialize():
+            return {}
+        info = mt5.account_info()
+        mt5.shutdown()
+        if info is None:
+            return {}
+        return {
+            "balance": float(info.balance),
+            "equity": float(info.equity),
+            "margin": float(info.margin),
+            "free_margin": float(info.margin_free),
+            "leverage": int(info.leverage),
+            "currency": info.currency,
+        }
+    except Exception:
+        return {}

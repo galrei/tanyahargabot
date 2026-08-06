@@ -575,8 +575,8 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
         return pts(v).rjust(width)
 
     rows = []
-    rows.append("           GT3       GT2      GT1    LIVE")
-    rows.append("──────    ──────   ──────   ──────   ─────")
+    rows.append("            GT3       GT2        GT1        LIVE")
+    rows.append("──────    ───────    ───────     ──────   ────────")
     rows.append(f"Tinggi  {col(gt3.get('high'))} {col(gt2.get('high'))} {col(gt1.get('high'))} {col(live_high)}")
     rows.append(f"Atas    {col_pts(a3)} {col_pts(a2)} {col_pts(a1)} {col_pts(live_atas)}")
     rows.append(f"Bawah   {col_pts(b3)} {col_pts(b2)} {col_pts(b1)} {col_pts(live_bawah)}")

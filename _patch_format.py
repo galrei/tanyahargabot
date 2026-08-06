@@ -1,118 +1,82 @@
-# Patch format saja: tanpa $, Atas/Bawah polos, Neto ▲/▼
+# Patch format saja: hapus +/-, Neto pakai ▲/▼
+# Jalankan: python patch_neto.py
 from pathlib import Path
 
 p = Path("bot.py")
 s = p.read_text(encoding="utf-8")
+n = 0
 
-# 1. HTML escape
-s = s.replace(
-    'return s.replace("&", "&").replace("<", "<").replace(">", ">")',
-    'return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")',
-)
+# 1) Neto di format_harga
+old1 = 'f"Neto : {_pts(neto)}"'
+new1 = 'f"Neto : {_neto(neto)}"'
+if old1 in s:
+    if "def _neto(" not in s:
+        helper = '''
+def _neto(v) -> str:
+    """Neto: 588 ▲ atau 147 ▼."""
+    if v is None:
+        return "-"
+    try:
+        n = int(round(float(v)))
+        if n > 0:
+            return f"{n} ▲"
+        if n < 0:
+            return f"{abs(n)} ▼"
+        return "0"
+    except Exception:
+        return str(v)
 
-# 2. Module _pts + _neto
-old = (
-    'def _pts(v) -> str:\n'
-    '    """Format poin (neto/julat/atas/bawah) tanpa koma."""\n'
-    '    if v is None:\n'
-    '        return "-"\n'
-    '    try:\n'
-    '        n = int(round(float(v)))\n'
-    '        return str(n)\n'
-    '    except Exception:\n'
-    '        return str(v)\n'
-)
-new = (
-    'def _pts(v) -> str:\n'
-    '    """Atas/Bawah/Julat: angka positif polos tanpa +/-."""\n'
-    '    if v is None:\n'
-    '        return "-"\n'
-    '    try:\n'
-    '        return str(abs(int(round(float(v)))))\n'
-    '    except Exception:\n'
-    '        return str(v)\n'
-    '\n'
-    '\n'
-    'def _neto(v) -> str:\n'
-    '    """Neto: 588 ▲ atau 147 ▼."""\n'
-    '    if v is None:\n'
-    '        return "-"\n'
-    '    try:\n'
-    '        n = int(round(float(v)))\n'
-    '        if n > 0:\n'
-    '            return f"{n} ▲"\n'
-    '        if n < 0:\n'
-    '            return f"{abs(n)} ▼"\n'
-    '        return "0"\n'
-    '    except Exception:\n'
-    '        return str(v)\n'
-)
-if old in s:
-    s = s.replace(old, new)
-    print("  + _neto helper")
+'''
+        marker = "def _pts(v) -> str:"
+        idx = s.find(marker)
+        if idx >= 0:
+            end = s.find("\n\n", idx)
+            if end > 0:
+                s = s[:end] + "\n" + helper + s[end:]
+                n += 1
+                print("+ helper _neto")
+    s = s.replace(old1, new1)
+    n += 1
+    print("+ format_harga Neto → ▲/▼")
 else:
-    print("  ! _pts block not found")
+    print("! format_harga Neto sudah diubah atau tidak ditemukan")
 
-s = s.replace('f"Neto : {_pts(neto)}"', 'f"Neto : {_neto(neto)}"')
-
-old2 = (
-    '    def pts(v):\n'
-    '        if v is None:\n'
-    '            return "-"\n'
-    '        try:\n'
-    '            n = int(round(float(v)))\n'
-    '            return f"{n:+d}" if n != 0 else "0"\n'
-    '        except Exception:\n'
-    '            return str(v)\n'
-)
-new2 = (
-    '    def pts(v):\n'
-    '        if v is None:\n'
-    '            return "-"\n'
-    '        try:\n'
-    '            return str(abs(int(round(float(v)))))\n'
-    '        except Exception:\n'
-    '            return str(v)\n'
-    '\n'
-    '    def neto_fmt(v):\n'
-    '        if v is None:\n'
-    '            return "-"\n'
-    '        try:\n'
-    '            n = int(round(float(v)))\n'
-    '            if n > 0:\n'
-    '                return f"{n} ▲"\n'
-    '            if n < 0:\n'
-    '                return f"{abs(n)} ▼"\n'
-    '            return "0"\n'
-    '        except Exception:\n'
-    '            return str(v)\n'
-)
+# 2) pts lokal di format_mt5_genesis: hapus +/-
+old2 = 'return f"{n:+d}" if n != 0 else "0"'
+new2 = 'return str(abs(n)) if n != 0 else "0"'
 if old2 in s:
-    s = s.replace(old2, new2)
-    print("  + neto_fmt in GT table")
+    s = s.replace(old2, new2, 1)
+    n += 1
+    print("+ Atas/Bawah tanpa +/-")
 else:
-    print("  ! local pts not found")
+    print("! pts +/- tidak ditemukan (mungkin sudah diubah)")
 
-old_row = (
-    'rows.append(f"Neto    {col_pts(gt3.get(\'neto\'))} '
-    '{col_pts(gt2.get(\'neto\'))} {col_pts(gt1.get(\'neto\'))} '
-    '{col_pts(live_neto)}")'
-)
-new_row = (
-    'def col_neto(v, width=9):\n'
-    '        t = neto_fmt(v)\n'
-    '        if len(t) > width:\n'
-    '            t = t[:width]\n'
-    '        return t.rjust(width)\n'
-    '    rows.append(f"Neto    {col_neto(gt3.get(\'neto\'))} '
-    '{col_neto(gt2.get(\'neto\'))} {col_neto(gt1.get(\'neto\'))} '
-    '{col_neto(live_neto)}")'
-)
-if old_row in s:
-    s = s.replace(old_row, new_row)
-    print("  + Neto row ▲/▼")
+# 3) Neto row di tabel GT
+old3 = 'rows.append(f"Neto    {col_pts(gt3.get(\'neto\'))} {col_pts(gt2.get(\'neto\'))} {col_pts(gt1.get(\'neto\'))} {col_pts(live_neto)}")'
+new3 = '''def _nf(v):
+        if v is None:
+            return "-"
+        try:
+            x = int(round(float(v)))
+            if x > 0:
+                return f"{x} ▲"
+            if x < 0:
+                return f"{abs(x)} ▼"
+            return "0"
+        except Exception:
+            return str(v)
+    def col_neto(v, width=9):
+        t = _nf(v)
+        if len(t) > width:
+            t = t[:width]
+        return t.rjust(width)
+    rows.append(f"Neto    {col_neto(gt3.get('neto'))} {col_neto(gt2.get('neto'))} {col_neto(gt1.get('neto'))} {col_neto(live_neto)}")'''
+if old3 in s:
+    s = s.replace(old3, new3)
+    n += 1
+    print("+ tabel GT Neto → ▲/▼")
 else:
-    print("  ! Neto row not found")
+    print("! baris Neto tabel tidak ditemukan")
 
 p.write_text(s, encoding="utf-8")
-print("  bot.py patched OK")
+print(f"\nSelesai: {n} perubahan. Jalankan ulang bot.")

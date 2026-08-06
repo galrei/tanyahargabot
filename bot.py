@@ -38,6 +38,12 @@ except ImportError:
     baca_genesis = None
     get_mt5_price = None
 
+# Sinyal pintar berbasis GT (Sinyal A-E)
+try:
+    from services.signal_engine import buat_sinyal_pintar
+except ImportError:
+    buat_sinyal_pintar = None
+
 load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -92,7 +98,7 @@ def _h(text) -> str:
     if text is None:
         return "-"
     s = str(text)
-    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return s.replace("&", "&").replace("<", "<").replace(">", ">")
 
 
 def _md(text: str) -> str:
@@ -244,48 +250,6 @@ def get_gold_data() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error ambil data: {e}")
         return {"error": f"Gagal mengambil data: {e}"}
-
-
-def buat_sinyal(data: Dict[str, Any]) -> str:
-    if data.get("error") or not data.get("price"):
-        return "⚠️ Data tidak tersedia."
-
-    change = data.get("change_pct") or 0
-    arus = data.get("arus", "")
-    price = data["price"]
-    lembah = data.get("lembah", 0)
-    puncak = data.get("puncak", 0)
-
-    jarak_sup = ((price - lembah) / price) * 100 if price else 0
-    jarak_res = ((puncak - price) / price) * 100 if price else 0
-
-    if "NAIK" in arus and change > 0.1:
-        sinyal = "🟢 BUY / LONG"
-        alasan = (
-            f"Arus naik + momentum positif.\n"
-            f"• Masuk sekitar: ${price:,.2f}\n"
-            f"• SL ide: di bawah lembah ${lembah:,.2f}\n"
-            f"• TP ide: dekat puncak ${puncak:,.2f}"
-        )
-    elif "TURUN" in arus and change < -0.1:
-        sinyal = "🔴 SELL / SHORT"
-        alasan = (
-            f"Arus turun + momentum negatif.\n"
-            f"• Masuk sekitar: ${price:,.2f}\n"
-            f"• SL ide: di atas puncak ${puncak:,.2f}\n"
-            f"• TP ide: dekat lembah ${lembah:,.2f}"
-        )
-    elif jarak_sup < 0.15:
-        sinyal = "🟡 LIHAT LEMBAH"
-        alasan = "Harga dekat lembah. Pantau apakah hold atau break."
-    elif jarak_res < 0.15:
-        sinyal = "🟡 LIHAT PUNCAK"
-        alasan = "Harga dekat puncak. Pantau apakah ayunan atau trobosan."
-    else:
-        sinyal = "🟠 TUNGGU / DATAR"
-        alasan = "Arah belum jelas. Tunggu trobosan atau konfirmasi lebih kuat."
-
-    return f"<b>Sinyal:</b> {sinyal}\n\n{alasan}"
 
 
 def get_isu() -> str:
@@ -582,7 +546,7 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
         f"<i>Tinggi · Atas · Bawah · Rendah · Awal · Neto · Inti · Julat</i>\n"
         f"<pre>{table}</pre>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"<b>Posisi &amp; Akun</b>\n"
+        f"<b>Posisi & Akun</b>\n"
         f"<pre>"
         f"Balance      : {num(balance)}\n"
         f"Equity       : {num(equity)}\n"
@@ -617,15 +581,23 @@ def format_tren(data: Dict[str, Any]) -> str:
 
 
 def format_sinyal(data: Dict[str, Any]) -> str:
+    """Pakai sinyal pintar berbasis GT (Sinyal A-E). Fallback ke pesan error jika engine tidak tersedia."""
     if data.get("error"):
         return f"❌ {data['error']}"
-    sinyal_text = buat_sinyal(data)
+
+    if buat_sinyal_pintar is not None:
+        return buat_sinyal_pintar(data)
+
+    # Fallback sangat sederhana jika import gagal
+    price = data.get("price", 0)
+    arus = data.get("arus", "-")
     return (
         f"🎯 <b>Sinyal Transaksi Gold</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"Harga : <b>${data['price']:,.2f}</b>\n"
-        f"Arus  : {data['arus']}\n\n"
-        f"{sinyal_text}\n"
+        f"Harga : <b>${price:,.2f}</b>\n"
+        f"Arus  : {arus}\n\n"
+        f"⚠️ Engine sinyal pintar belum tersedia.\n"
+        f"Pastikan folder services/signal_engine.py ada.\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"⚠️ <i>Bukan saran finansial. Gunakan risk management.</i>"
     )
@@ -665,7 +637,12 @@ def format_isu() -> str:
 def format_full(data: Dict[str, Any]) -> str:
     if data.get("error"):
         return f"❌ {_h(data['error'])}"
-    sinyal_text = buat_sinyal(data)
+
+    if buat_sinyal_pintar is not None:
+        sinyal_text = buat_sinyal_pintar(data)
+    else:
+        sinyal_text = "Sinyal: data terbatas"
+
     def n(v, fmt="{:,.2f}"):
         if v is None:
             return "-"
@@ -673,11 +650,13 @@ def format_full(data: Dict[str, Any]) -> str:
             return fmt.format(float(v))
         except Exception:
             return str(v)
+
     ch = data.get("change")
     cp = data.get("change_pct")
     ch_str = f"{ch:+.2f}" if ch is not None else "-"
     if cp is not None:
         ch_str += f" ({cp:+.3f}%)"
+
     return (
         f"📋 <b>Ringkasan Lengkap Gold (XAUUSD)</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -730,7 +709,7 @@ async def bantuan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "💰 <b>Harga Aktual</b> — Harga live\n"
         "📐 <b>GT</b> — Data faktual dari EA Genesis\n"
         "📈 <b>Arus</b> — Arah pasar (naik/turun/datar)\n"
-        "🎯 <b>Sinyal</b> — Ide masuk sederhana + SL/TP\n"
+        "🎯 <b>Sinyal</b> — Sinyal pintar berbasis GT (A–E) + skor + SL/TP ide\n"
         "📊 <b>Puncak & Lembah</b> — Level penting\n"
         "📰 <b>Isu & Rumor</b> — Faktor yang sering gerakkan harga\n"
         "📚 <b>Sistem & Strategi</b> — Panduan sistem pemburuan + rekomendasi dinamis\n"
@@ -766,7 +745,7 @@ async def kirim_arus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def kirim_sinyal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    msg = await update.message.reply_text("⏳ Menyusun sinyal...")
+    msg = await update.message.reply_text("⏳ Menyusun sinyal pintar...")
     try:
         data = await _fetch_data(12)
         await msg.edit_text(format_sinyal(data), parse_mode="HTML", reply_markup=tombol_aksi())
@@ -897,7 +876,7 @@ async def post_init(application: Application) -> None:
         BotCommand("mt5", "Data faktual GT"),
         BotCommand("gt", "Data faktual GT"),
         BotCommand("arus", "Analisis arus"),
-        BotCommand("sinyal", "Sinyal transaksi"),
+        BotCommand("sinyal", "Sinyal pintar GT (A-E)"),
         BotCommand("pl", "Puncak & Lembah"),
         BotCommand("isu", "Isu & rumor pasar"),
         BotCommand("strategi", "Sistem & strategi transaksi"),

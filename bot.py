@@ -12,6 +12,35 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
+# ── Load .env otomatis (sebelum baca TOKEN) ──
+def _load_dotenv():
+    """Muat file .env di folder yang sama dengan bot.py (tanpa dependency ekstra)."""
+    env_path = ROOT / ".env"
+    if not env_path.exists():
+        return
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:  # jangan overwrite env yang sudah ada
+                    os.environ[key] = value
+    except Exception as e:
+        print(f"[WARN] Gagal baca .env: {e}")
+
+_load_dotenv()
+
+# Coba juga python-dotenv jika terinstall (lebih robust)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env")
+except ImportError:
+    pass
+
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application,
@@ -40,7 +69,7 @@ from services.signal_engine import (
 # ─────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "ISI_TOKEN_ANDA_DISINI")
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -200,9 +229,19 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 # MAIN
 # ─────────────────────────────────────────────
 def main():
-    if not TOKEN or TOKEN == "ISI_TOKEN_ANDA_DISINI":
-        print("❌ Set environment variable TELEGRAM_BOT_TOKEN dulu!")
-        print("   export TELEGRAM_BOT_TOKEN='123456:ABC-DEF...'")
+    if not TOKEN:
+        print("=" * 50)
+        print("❌ TELEGRAM_BOT_TOKEN tidak ditemukan!")
+        print()
+        print("Pastikan file .env ada di folder yang sama dengan bot.py")
+        print("Isi .env contoh:")
+        print()
+        print("  TELEGRAM_BOT_TOKEN=123456:ABC-DEF...")
+        print()
+        print("Atau set environment variable:")
+        print("  set TELEGRAM_BOT_TOKEN=123456:ABC-DEF...   (Windows)")
+        print("  export TELEGRAM_BOT_TOKEN=123456:ABC-DEF... (Linux/Mac)")
+        print("=" * 50)
         return
 
     app = Application.builder().token(TOKEN).build()
@@ -221,6 +260,8 @@ def main():
     app.add_error_handler(error_handler)
 
     logger.info("Bot @tanyahargabot starting…")
+    print("✅ Token ditemukan. Bot sedang berjalan...")
+    print("   Tekan Ctrl+C untuk menghentikan.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

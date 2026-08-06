@@ -11,6 +11,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Path default tempat EA Genesis menulis data
 GENESIS_FILE_CANDIDATES = [
     Path(os.environ.get("APPDATA", "")) / "MetaQuotes" / "Terminal",
     Path("C:/Users") / os.environ.get("USERNAME", "") / "AppData" / "Roaming" / "MetaQuotes" / "Terminal",
@@ -192,40 +193,3 @@ def _num(d: dict, keys: list) -> Optional[float]:
             except (TypeError, ValueError):
                 continue
     return None
-
-
-def get_gold_data(symbol: str = "XAUUSD") -> Dict[str, Any]:
-    """Alias agar bot singkat & lengkap sama-sama bisa jalan."""
-    data = get_harga_lengkap(symbol)
-    if not data:
-        return {"bid": None, "ask": None, "source": "none", "waktu": "—", "price": None}
-    out = dict(data)
-    if "waktu" not in out and "time" in out:
-        out["waktu"] = out["time"]
-    if out.get("bid") is None and out.get("price") is not None:
-        out["bid"] = out["price"]
-    if "julat" not in out and out.get("jangkauan") is not None:
-        out["julat"] = out["jangkauan"]
-    return out
-
-
-def get_account_info() -> Dict[str, Any]:
-    """Info akun MT5 untuk menu status."""
-    try:
-        import MetaTrader5 as mt5
-        if not mt5.initialize():
-            return {}
-        info = mt5.account_info()
-        mt5.shutdown()
-        if info is None:
-            return {}
-        return {
-            "balance": float(info.balance),
-            "equity": float(info.equity),
-            "margin": float(info.margin),
-            "free_margin": float(info.margin_free),
-            "leverage": int(info.leverage),
-            "currency": info.currency,
-        }
-    except Exception:
-        return {}

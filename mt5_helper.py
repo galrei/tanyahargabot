@@ -61,7 +61,9 @@ def _find_genesis_file() -> Optional[Path]:
 
 
 def baca_genesis() -> Optional[Dict[str, Any]]:
-    """Baca data dari file yang ditulis EA Genesis."""
+    """
+    Baca data dari file yang ditulis EA Genesis.
+    """
     path = _find_genesis_file()
     if not path:
         return None
@@ -71,12 +73,14 @@ def baca_genesis() -> Optional[Dict[str, Any]]:
         if not text:
             return None
 
+        # Coba JSON dulu
         if text.startswith("{"):
             data = json.loads(text)
-            data["_source"] = "Genesis EA (kebun saldo)"
+            data["_source"] = f"Genesis EA (kebun saldo)"
             data["_file"] = str(path)
             return data
 
+        # Fallback: format key=value per baris
         data = {}
         for line in text.splitlines():
             line = line.strip()
@@ -89,7 +93,7 @@ def baca_genesis() -> Optional[Dict[str, Any]]:
                 except ValueError:
                     data[k] = v
         if data:
-            data["_source"] = "Genesis EA (kebun saldo)"
+            data["_source"] = f"Genesis EA (kebun saldo)"
             data["_file"] = str(path)
             return data
     except Exception as e:
@@ -168,6 +172,7 @@ def get_harga_lengkap(symbol: str = "XAUUSD") -> Dict[str, Any]:
     2. MT5 terminal (harga real broker)
     3. None (biar bot pakai Yahoo Finance)
     """
+    # 1. Genesis EA
     genesis = baca_genesis()
     if genesis:
         out = {
@@ -197,6 +202,7 @@ def get_harga_lengkap(symbol: str = "XAUUSD") -> Dict[str, Any]:
             out["neto"] = round(out["close"] - out["open"], 2)
         return out
 
+    # 2. MT5 langsung
     mt5_data = get_mt5_price(symbol)
     if mt5_data:
         mt5_data["neto"] = None
@@ -224,44 +230,3 @@ def _num(d: dict, keys: list) -> Optional[float]:
             except (TypeError, ValueError):
                 continue
     return None
-
-
-# ─────────────────────────────────────────────
-# Alias kompatibilitas (bot singkat & lengkap)
-# ─────────────────────────────────────────────
-
-def get_gold_data(symbol: str = "XAUUSD") -> Dict[str, Any]:
-    """Alias untuk bot yang memanggil get_gold_data()."""
-    data = get_harga_lengkap(symbol)
-    if not data:
-        return {"bid": None, "ask": None, "source": "none", "waktu": "—"}
-    out = dict(data)
-    if "waktu" not in out and "time" in out:
-        out["waktu"] = out["time"]
-    if "price" in out and out.get("bid") is None:
-        out["bid"] = out["price"]
-    if "julat" not in out and out.get("jangkauan") is not None:
-        out["julat"] = out["jangkauan"]
-    return out
-
-
-def get_account_info() -> Dict[str, Any]:
-    """Info akun MT5 (balance, equity, margin)."""
-    try:
-        import MetaTrader5 as mt5
-        if not mt5.initialize():
-            return {}
-        info = mt5.account_info()
-        mt5.shutdown()
-        if info is None:
-            return {}
-        return {
-            "balance": float(info.balance),
-            "equity": float(info.equity),
-            "margin": float(info.margin),
-            "free_margin": float(info.margin_free),
-            "leverage": int(info.leverage),
-            "currency": info.currency,
-        }
-    except Exception:
-        return {}

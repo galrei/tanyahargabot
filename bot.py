@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-TanyaHargaBot - Teman pesaldo gold (XAUUSD) di MT5
+TanyaHargaBot - Teman pemburu saldo gold (XAUUSD) di MT5
 Menu lengkap: harga aktual, arus, sinyal, puncak/lembah, isu/rumor, ringkasan, sistem & strategi
 """
 

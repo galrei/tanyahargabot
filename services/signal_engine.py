@@ -2,6 +2,7 @@
 """
 Engine sinyal pintar berbasis data GT (Genesis Riwayat) penuh.
 Sinyal A–E: Momentum Kuat, Pullback, Range, Imbalance, Konvergensi Multi-bar.
+Format angka mengikuti dashboard Genesis (tanpa $, Neto pakai ▲/▼).
 """
 
 from typing import Dict, Any
@@ -22,7 +23,6 @@ def _safe_int(v, default=0):
 
 
 def _pick(d: dict, *keys, default=None):
-    """Ambil nilai pertama yang tidak None dari beberapa key."""
     for k in keys:
         if d is None:
             break
@@ -32,11 +32,45 @@ def _pick(d: dict, *keys, default=None):
     return default
 
 
+def _n(v, digits=2) -> str:
+    """Harga tanpa koma ribuan, tanpa $."""
+    if v is None:
+        return "-"
+    try:
+        f = float(v)
+        if digits == 0:
+            return str(int(round(f)))
+        return f"{f:.{digits}f}"
+    except Exception:
+        return str(v)
+
+
+def _pts(v) -> str:
+    """Poin polos tanpa +/- (Atas/Bawah/Julat)."""
+    if v is None:
+        return "-"
+    try:
+        return str(abs(int(round(float(v)))))
+    except Exception:
+        return str(v)
+
+
+def _neto(v) -> str:
+    """Neto: 588 ▲  atau  147 ▼  (tanpa +/-)."""
+    if v is None:
+        return "-"
+    try:
+        n = int(round(float(v)))
+        if n > 0:
+            return f"{n} ▲"
+        if n < 0:
+            return f"{abs(n)} ▼"
+        return "0"
+    except Exception:
+        return str(v)
+
+
 def analisis_gt(data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Analisis mendalam data GT.
-    Mengembalikan dict lengkap untuk decision making.
-    """
     raw = data.get("raw") or {}
     if not isinstance(raw, dict):
         raw = {}
@@ -45,39 +79,27 @@ def analisis_gt(data: Dict[str, Any]) -> Dict[str, Any]:
     gt2 = raw.get("gt2") if isinstance(raw.get("gt2"), dict) else {}
     gt3 = raw.get("gt3") if isinstance(raw.get("gt3"), dict) else {}
 
-    # LIVE — prioritaskan field di data, lalu raw
     live_price = _safe_float(_pick(data, "price") or _pick(raw, "price", "close"))
-    live_high = _safe_float(
-        _pick(data, "tinggi", "high") or _pick(raw, "tinggi", "high")
-    )
-    live_low = _safe_float(
-        _pick(data, "bawah", "low") or _pick(raw, "bawah", "low")
-    )
-    live_open = _safe_float(
-        _pick(data, "awal", "open") or _pick(raw, "awal", "open")
-    )
-    live_inti = _safe_float(
-        _pick(data, "inti", "close") or _pick(raw, "inti", "close") or live_price
-    )
+    live_high = _safe_float(_pick(data, "tinggi", "high") or _pick(raw, "tinggi", "high"))
+    live_low = _safe_float(_pick(data, "bawah", "low") or _pick(raw, "bawah", "low"))
+    live_open = _safe_float(_pick(data, "awal", "open") or _pick(raw, "awal", "open"))
+    live_inti = _safe_float(_pick(data, "inti", "close") or _pick(raw, "inti", "close") or live_price)
 
     live_neto = _safe_int(
         _pick(data, "neto", "change") if _pick(data, "neto", "change") is not None
         else _pick(raw, "neto", "change")
     )
 
-    # julat bisa bernama julat / jangkauan / range
     live_julat = _safe_int(
         _pick(data, "julat", "jangkauan") if _pick(data, "julat", "jangkauan") is not None
         else _pick(raw, "julat", "jangkauan", "range")
     )
     if live_julat == 0 and live_high and live_low:
-        # fallback hitung dari high-low dalam points (asumsi 0.01)
         live_julat = _safe_int((live_high - live_low) / 0.01)
 
     live_atas = _safe_int(_pick(raw, "ch", "atas") or data.get("atas"))
     live_bawah = _safe_int(_pick(raw, "cl", "bawah_wick") or data.get("bawah_wick"))
 
-    # Hitung atas/bawah dari OHLC jika belum ada
     if (live_atas == 0 and live_bawah == 0) and live_open and live_high and live_low and live_inti:
         body_top = max(live_open, live_inti)
         body_bot = min(live_open, live_inti)
@@ -97,14 +119,7 @@ def analisis_gt(data: Dict[str, Any]) -> Dict[str, Any]:
             julat = _safe_int((high - low) / 0.01)
         if neto == 0 and open_p and close:
             neto = _safe_int((close - open_p) / 0.01)
-        return {
-            "neto": neto,
-            "julat": julat,
-            "high": high,
-            "low": low,
-            "open": open_p,
-            "close": close,
-        }
+        return {"neto": neto, "julat": julat, "high": high, "low": low, "open": open_p, "close": close}
 
     return {
         "live": {
@@ -128,10 +143,6 @@ def analisis_gt(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def buat_sinyal_pintar(data: Dict[str, Any]) -> str:
-    """
-    Engine sinyal baru berbasis GT penuh.
-    Menghasilkan Sinyal A / B / C / D / E + skor + alasan.
-    """
     if data.get("error") or not data.get("price"):
         return "⚠️ Data tidak tersedia untuk analisis sinyal."
 
@@ -150,7 +161,7 @@ def buat_sinyal_pintar(data: Dict[str, Any]) -> str:
     jarak_ke_high = live["high"] - price if live["high"] else 999
     jarak_ke_low = price - live["low"] if live["low"] else 999
     total_wick = atas + bawah if (atas + bawah) > 0 else 1
-    imbalance = (atas - bawah) / total_wick  # positif = tekanan jual
+    imbalance = (atas - bawah) / total_wick
 
     skor = 5
     sinyal = "🟠 TUNGGU"
@@ -158,32 +169,28 @@ def buat_sinyal_pintar(data: Dict[str, Any]) -> str:
     alasan = []
     arah = None
 
-    # ========== SINYAL A : Momentum Kuat ==========
-    if abs(neto) >= 8 and abs(g1["neto"]) >= 6 and (
-        g1["julat"] == 0 or julat > g1["julat"] * 1.15
-    ):
+    if abs(neto) >= 8 and abs(g1["neto"]) >= 6 and (g1["julat"] == 0 or julat > g1["julat"] * 1.15):
         if neto > 0 and g1["neto"] > 0:
             sinyal = "🟢 SINYAL A – Momentum Kuat BUY"
             tipe = "A"
             arah = "BUY"
             skor = 8 + min(2, max(0, neto // 5))
-            alasan.append(f"Neto LIVE +{neto} & GT1 +{g1['neto']} sejalan kuat")
+            alasan.append(f"Neto LIVE {_neto(neto)} & GT1 {_neto(g1['neto'])} sejalan kuat")
             if g1["julat"]:
-                alasan.append(f"Julat melebar ({julat} vs GT1 {g1['julat']})")
+                alasan.append(f"Julat melebar ({_pts(julat)} vs GT1 {_pts(g1['julat'])})")
             else:
-                alasan.append(f"Julat LIVE {julat} poin")
+                alasan.append(f"Julat LIVE {_pts(julat)} poin")
         elif neto < 0 and g1["neto"] < 0:
             sinyal = "🔴 SINYAL A – Momentum Kuat SELL"
             tipe = "A"
             arah = "SELL"
             skor = 8 + min(2, max(0, abs(neto) // 5))
-            alasan.append(f"Neto LIVE {neto} & GT1 {g1['neto']} sejalan kuat")
+            alasan.append(f"Neto LIVE {_neto(neto)} & GT1 {_neto(g1['neto'])} sejalan kuat")
             if g1["julat"]:
-                alasan.append(f"Julat melebar ({julat} vs GT1 {g1['julat']})")
+                alasan.append(f"Julat melebar ({_pts(julat)} vs GT1 {_pts(g1['julat'])})")
             else:
-                alasan.append(f"Julat LIVE {julat} poin")
+                alasan.append(f"Julat LIVE {_pts(julat)} poin")
 
-    # ========== SINYAL B : Pullback Berkualitas ==========
     elif (g2["neto"] * g3["neto"] > 0) and abs(g2["neto"]) >= 5:
         if g2["neto"] > 0 and neto <= 3 and jarak_ke_low < 15:
             sinyal = "🟢 SINYAL B – Pullback BUY"
@@ -191,16 +198,15 @@ def buat_sinyal_pintar(data: Dict[str, Any]) -> str:
             arah = "BUY"
             skor = 7
             alasan.append("Trend utama naik (GT2 & GT3 positif)")
-            alasan.append(f"Harga pullback dekat low (jarak {jarak_ke_low:.1f})")
+            alasan.append(f"Harga pullback dekat low (jarak {_n(jarak_ke_low)})")
         elif g2["neto"] < 0 and neto >= -3 and jarak_ke_high < 15:
             sinyal = "🔴 SINYAL B – Pullback SELL"
             tipe = "B"
             arah = "SELL"
             skor = 7
             alasan.append("Trend utama turun (GT2 & GT3 negatif)")
-            alasan.append(f"Harga pullback dekat high (jarak {jarak_ke_high:.1f})")
+            alasan.append(f"Harga pullback dekat high (jarak {_n(jarak_ke_high)})")
 
-    # ========== SINYAL C : Range / Julat Sempit ==========
     elif (
         (g1["julat"] > 0 and g1["julat"] < 28)
         and (g2["julat"] == 0 or g2["julat"] < 30)
@@ -212,33 +218,31 @@ def buat_sinyal_pintar(data: Dict[str, Any]) -> str:
             arah = "BUY"
             skor = 6
             alasan.append("Julat sempit → mean reversion")
-            alasan.append(f"Harga sangat dekat low ({jarak_ke_low:.1f})")
+            alasan.append(f"Harga sangat dekat low ({_n(jarak_ke_low)})")
         elif jarak_ke_high < 12:
             sinyal = "🔴 SINYAL C – Range SELL (dekat puncak)"
             tipe = "C"
             arah = "SELL"
             skor = 6
             alasan.append("Julat sempit → mean reversion")
-            alasan.append(f"Harga sangat dekat high ({jarak_ke_high:.1f})")
+            alasan.append(f"Harga sangat dekat high ({_n(jarak_ke_high)})")
 
-    # ========== SINYAL D : Imbalance Tekanan ==========
     elif abs(imbalance) > 0.45 and abs(neto) >= 4:
         if imbalance > 0.45 and neto < 0:
             sinyal = "🔴 SINYAL D – Tekanan Jual Kuat"
             tipe = "D"
             arah = "SELL"
             skor = 7
-            alasan.append(f"Imbalance Atas dominan ({atas} vs {bawah})")
-            alasan.append(f"Neto LIVE {neto} mendukung tekanan jual")
+            alasan.append(f"Imbalance Atas dominan ({_pts(atas)} vs {_pts(bawah)})")
+            alasan.append(f"Neto LIVE {_neto(neto)} mendukung tekanan jual")
         elif imbalance < -0.45 and neto > 0:
             sinyal = "🟢 SINYAL D – Tekanan Beli Kuat"
             tipe = "D"
             arah = "BUY"
             skor = 7
-            alasan.append(f"Imbalance Bawah dominan ({bawah} vs {atas})")
-            alasan.append(f"Neto LIVE +{neto} mendukung tekanan beli")
+            alasan.append(f"Imbalance Bawah dominan ({_pts(bawah)} vs {_pts(atas)})")
+            alasan.append(f"Neto LIVE {_neto(neto)} mendukung tekanan beli")
 
-    # ========== SINYAL E : Konvergensi Multi-Bar ==========
     elif (g3["neto"] > 0 and g2["neto"] > 0 and g1["neto"] > 0 and neto > 0) or (
         g3["neto"] < 0 and g2["neto"] < 0 and g1["neto"] < 0 and neto < 0
     ):
@@ -255,20 +259,19 @@ def buat_sinyal_pintar(data: Dict[str, Any]) -> str:
         alasan.append("GT3 → GT2 → GT1 → LIVE semuanya searah")
         alasan.append("Konfirmasi momentum multi-bar sangat kuat")
 
-    # Fallback sederhana jika hanya LIVE (tanpa history GT)
     if tipe == "Netral" and abs(neto) >= 10:
         if neto > 0:
             sinyal = "🟢 SINYAL DASAR – Neto kuat BUY"
             tipe = "Dasar"
             arah = "BUY"
             skor = 6
-            alasan.append(f"Neto LIVE +{neto} cukup kuat (tanpa konfirmasi multi-bar)")
+            alasan.append(f"Neto LIVE {_neto(neto)} cukup kuat (tanpa konfirmasi multi-bar)")
         else:
             sinyal = "🔴 SINYAL DASAR – Neto kuat SELL"
             tipe = "Dasar"
             arah = "SELL"
             skor = 6
-            alasan.append(f"Neto LIVE {neto} cukup kuat (tanpa konfirmasi multi-bar)")
+            alasan.append(f"Neto LIVE {_neto(neto)} cukup kuat (tanpa konfirmasi multi-bar)")
 
     if tipe == "Netral":
         alasan.append("Belum ada kondisi GT yang cukup kuat")
@@ -292,14 +295,14 @@ def buat_sinyal_pintar(data: Dict[str, Any]) -> str:
     if arah:
         level_text = (
             f"\n\n📍 <b>Ide Level:</b>\n"
-            f"• Entry  : sekitar ${price:,.2f}\n"
-            f"• SL ide : ${sl_ide:,.2f}\n"
-            f"• TP ide : ${tp_ide:,.2f}"
+            f"• Entry  : sekitar {_n(price)}\n"
+            f"• SL ide : {_n(sl_ide)}\n"
+            f"• TP ide : {_n(tp_ide)}"
         )
 
     src = a.get("source") or data.get("source") or "-"
     if "genesis" in str(src).lower() or a["from_mt5"]:
-        src_label = "Genesis EA / MT5"
+        src_label = "Genesis EA Kebun Saldo"
     else:
         src_label = str(src)
 
@@ -309,21 +312,14 @@ def buat_sinyal_pintar(data: Dict[str, Any]) -> str:
         f"🎯 <b>{sinyal}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"Skor Kekuatan : <b>{skor}/10</b>\n"
-        f"Harga         : <b>${price:,.2f}</b>\n"
-        f"Neto LIVE     : {neto:+d}   |  Julat: {julat}\n"
-        f"Atas/Bawah    : {atas} / {bawah}\n"
+        f"Harga         : <b>{_n(price)}</b>\n"
+        f"Neto LIVE     : {_neto(neto)}   |  Julat: {_pts(julat)}\n"
+        f"Atas/Bawah    : {_pts(atas)} / {_pts(bawah)}\n"
         f"Data          : {gt_status}\n"
-        f"Sumber        : {_h_src(src_label)}\n\n"
+        f"Sumber        : {src_label}\n\n"
         f"<b>Alasan berbasis GT:</b>\n{alasan_text}"
         f"{level_text}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"⚠️ Bukan saran finansial. Selalu gunakan risk management ketat."
     )
     return result
-
-
-def _h_src(text) -> str:
-    if text is None:
-        return "-"
-    s = str(text)
-    return s.replace("&", "&").replace("<", "<").replace(">", ">")

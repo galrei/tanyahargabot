@@ -1,64 +1,44 @@
 # services/signal_engine.py
-"""
-Engine sinyal pintar berbasis data GT (Genesis Riwayat) penuh.
-Sinyal A–E: Momentum Kuat, Pullback, Range, Imbalance, Konvergensi Multi-bar.
-Format angka mengikuti dashboard Genesis (tanpa $, Neto pakai ▲/▼).
-"""
+# Genesis GT Signal Engine - format dashboard 100% sesuai spesifikasi
 
-from typing import Dict, Any
+from __future__ import annotations
+from typing import Any, Dict, Optional, Tuple
+import math
 
 
-def _safe_float(v, default=0.0):
-    try:
-        return float(v) if v is not None else default
-    except (TypeError, ValueError):
-        return default
+# ─────────────────────────────────────────────
+# HELPER FORMAT (wajib dipakai di semua menu)
+# ─────────────────────────────────────────────
 
-
-def _safe_int(v, default=0):
-    try:
-        return int(round(float(v))) if v is not None else default
-    except (TypeError, ValueError):
-        return default
-
-
-def _pick(d: dict, *keys, default=None):
-    for k in keys:
-        if d is None:
-            break
-        v = d.get(k) if isinstance(d, dict) else None
-        if v is not None and v != "":
-            return v
-    return default
-
-
-def _n(v, digits=2) -> str:
-    """Harga tanpa koma ribuan, tanpa $."""
+def _n(v: Any, decimals: int = 2) -> str:
+    """Harga: 4244.22 (tanpa koma, tanpa $)"""
     if v is None:
-        return "-"
+        return "—"
     try:
-        f = float(v)
-        if digits == 0:
-            return str(int(round(f)))
-        return f"{f:.{digits}f}"
-    except Exception:
-        return str(v)
+        return f"{float(v):.{decimals}f}"
+    except (TypeError, ValueError):
+        return "—"
 
 
-def _pts(v) -> str:
-    """Poin polos tanpa +/- (Atas/Bawah/Julat)."""
+def _pts(v: Any) -> str:
+    """Atas / Bawah / Julat: angka bulat positif murni (tanpa tanda)"""
     if v is None:
-        return "-"
+        return "—"
     try:
         return str(abs(int(round(float(v)))))
-    except Exception:
-        return str(v)
+    except (TypeError, ValueError):
+        return "—"
 
 
-def _neto(v) -> str:
-    """Neto: 588 ▲  atau  147 ▼  (tanpa +/-)."""
+def _neto(v: Any) -> str:
+    """
+    Neto: 588 ▲  atau  147 ▼
+    - Angka selalu positif
+    - ▲ = naik (positif)
+    - ▼ = turun (negatif)
+    """
     if v is None:
-        return "-"
+        return "—"
     try:
         n = int(round(float(v)))
         if n > 0:
@@ -66,260 +46,336 @@ def _neto(v) -> str:
         if n < 0:
             return f"{abs(n)} ▼"
         return "0"
-    except Exception:
-        return str(v)
+    except (TypeError, ValueError):
+        return "—"
 
 
-def analisis_gt(data: Dict[str, Any]) -> Dict[str, Any]:
-    raw = data.get("raw") or {}
-    if not isinstance(raw, dict):
-        raw = {}
-
-    gt1 = raw.get("gt1") if isinstance(raw.get("gt1"), dict) else {}
-    gt2 = raw.get("gt2") if isinstance(raw.get("gt2"), dict) else {}
-    gt3 = raw.get("gt3") if isinstance(raw.get("gt3"), dict) else {}
-
-    live_price = _safe_float(_pick(data, "price") or _pick(raw, "price", "close"))
-    live_high = _safe_float(_pick(data, "tinggi", "high") or _pick(raw, "tinggi", "high"))
-    live_low = _safe_float(_pick(data, "bawah", "low") or _pick(raw, "bawah", "low"))
-    live_open = _safe_float(_pick(data, "awal", "open") or _pick(raw, "awal", "open"))
-    live_inti = _safe_float(_pick(data, "inti", "close") or _pick(raw, "inti", "close") or live_price)
-
-    live_neto = _safe_int(
-        _pick(data, "neto", "change") if _pick(data, "neto", "change") is not None
-        else _pick(raw, "neto", "change")
+def _h(text: Any) -> str:
+    """HTML escape aman untuk Telegram"""
+    if text is None:
+        return ""
+    s = str(text)
+    return (
+        s.replace("&", "&amp;")
+         .replace("<", "&lt;")
+         .replace(">", "&gt;")
     )
 
-    live_julat = _safe_int(
-        _pick(data, "julat", "jangkauan") if _pick(data, "julat", "jangkauan") is not None
-        else _pick(raw, "julat", "jangkauan", "range")
-    )
-    if live_julat == 0 and live_high and live_low:
-        live_julat = _safe_int((live_high - live_low) / 0.01)
 
-    live_atas = _safe_int(_pick(raw, "ch", "atas") or data.get("atas"))
-    live_bawah = _safe_int(_pick(raw, "cl", "bawah_wick") or data.get("bawah_wick"))
+# ─────────────────────────────────────────────
+# ANALISIS GT (dari genesis_data.json / raw dict)
+# ─────────────────────────────────────────────
 
-    if (live_atas == 0 and live_bawah == 0) and live_open and live_high and live_low and live_inti:
-        body_top = max(live_open, live_inti)
-        body_bot = min(live_open, live_inti)
-        live_atas = _safe_int((live_high - body_top) / 0.01)
-        live_bawah = _safe_int((body_bot - live_low) / 0.01)
+def _safe_float(v: Any, default: float = 0.0) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
 
-    def extract(g):
-        if not g:
-            return {"neto": 0, "julat": 0, "high": 0.0, "low": 0.0, "open": 0.0, "close": 0.0}
-        neto = _safe_int(g.get("neto"))
-        julat = _safe_int(g.get("julat") or g.get("jangkauan"))
-        high = _safe_float(g.get("high") or g.get("tinggi"))
-        low = _safe_float(g.get("low") or g.get("bawah") or g.get("rendah"))
-        open_p = _safe_float(g.get("open") or g.get("awal"))
-        close = _safe_float(g.get("close") or g.get("inti"))
-        if julat == 0 and high and low:
-            julat = _safe_int((high - low) / 0.01)
-        if neto == 0 and open_p and close:
-            neto = _safe_int((close - open_p) / 0.01)
-        return {"neto": neto, "julat": julat, "high": high, "low": low, "open": open_p, "close": close}
+
+def analisis_gt(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Menerima dict full dari genesis_data.json atau hasil get_gold_data().
+    Menghasilkan struktur siap pakai untuk semua format_*.
+    """
+    if not raw:
+        return {}
+
+    # Ambil data GT3 / GT2 / GT1 / LIVE
+    def pick(prefix: str) -> Dict[str, float]:
+        # support beberapa gaya key dari EA
+        mapping = {
+            "tinggi":  [f"{prefix}_tinggi", f"{prefix}_high", f"{prefix}_ch", "tinggi", "high"],
+            "atas":    [f"{prefix}_atas", f"{prefix}_up", "atas"],
+            "bawah":   [f"{prefix}_bawah", f"{prefix}_down", "bawah"],
+            "rendah":  [f"{prefix}_rendah", f"{prefix}_low", f"{prefix}_cl", "rendah", "low"],
+            "awal":    [f"{prefix}_awal", f"{prefix}_open", "awal", "open"],
+            "neto":    [f"{prefix}_neto", f"{prefix}_net", "neto"],
+            "inti":    [f"{prefix}_inti", f"{prefix}_mid", "inti"],
+            "julat":   [f"{prefix}_julat", f"{prefix}_range", f"{prefix}_jangkauan", "julat", "range"],
+        }
+        out = {}
+        for key, candidates in mapping.items():
+            val = None
+            for c in candidates:
+                if c in raw and raw[c] is not None:
+                    val = raw[c]
+                    break
+            out[key] = _safe_float(val)
+        return out
+
+    gt3 = pick("gt3")
+    gt2 = pick("gt2")
+    gt1 = pick("gt1")
+    live = pick("live") or pick("gt_live") or pick("")
+
+    # fallback live dari harga realtime
+    if not any(live.values()):
+        bid = _safe_float(raw.get("bid") or raw.get("price") or raw.get("close"))
+        high = _safe_float(raw.get("high") or raw.get("h"))
+        low = _safe_float(raw.get("low") or raw.get("l"))
+        open_ = _safe_float(raw.get("open") or raw.get("o"))
+        live = {
+            "tinggi": high or bid,
+            "atas":   max(0, (high - open_) * 100) if high and open_ else 0,  # poin kasar
+            "bawah":  max(0, (open_ - low) * 100) if open_ and low else 0,
+            "rendah": low or bid,
+            "awal":   open_ or bid,
+            "neto":   (bid - open_) * 100 if bid and open_ else 0,
+            "inti":   (high + low) / 2 if high and low else bid,
+            "julat":  abs(high - low) * 100 if high and low else 0,
+        }
+
+    # waktu live
+    waktu = raw.get("waktu") or raw.get("time") or raw.get("live_time") or "—"
 
     return {
-        "live": {
-            "neto": live_neto,
-            "julat": live_julat,
-            "atas": live_atas,
-            "bawah": live_bawah,
-            "price": live_price,
-            "high": live_high,
-            "low": live_low,
-            "open": live_open,
-            "inti": live_inti,
-        },
-        "gt1": extract(gt1),
-        "gt2": extract(gt2),
-        "gt3": extract(gt3),
-        "from_mt5": bool(data.get("from_mt5")),
-        "has_gt_history": bool(gt1 or gt2 or gt3),
-        "source": data.get("source", "-"),
+        "gt3": gt3,
+        "gt2": gt2,
+        "gt1": gt1,
+        "live": live,
+        "waktu": str(waktu),
+        "bid": _safe_float(raw.get("bid") or raw.get("price")),
+        "ask": _safe_float(raw.get("ask")),
+        "raw": raw,
     }
 
 
-def buat_sinyal_pintar(data: Dict[str, Any]) -> str:
-    if data.get("error") or not data.get("price"):
-        return "⚠️ Data tidak tersedia untuk analisis sinyal."
+# ─────────────────────────────────────────────
+# SINYAL PINTAR A–E
+# ─────────────────────────────────────────────
 
-    a = analisis_gt(data)
-    live = a["live"]
-    g1 = a["gt1"]
-    g2 = a["gt2"]
-    g3 = a["gt3"]
+def buat_sinyal_pintar(analisis: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Menghasilkan sinyal A–E berdasarkan GT1/GT2/GT3/LIVE.
+    Return dict siap ditampilkan.
+    """
+    if not analisis:
+        return {"kode": "—", "arah": "NETRAL", "alasan": "Data GT kosong", "score": 0}
 
-    price = live["price"]
-    neto = live["neto"]
-    julat = live["julat"]
-    atas = live["atas"]
-    bawah = live["bawah"]
+    gt3 = analisis.get("gt3", {})
+    gt2 = analisis.get("gt2", {})
+    gt1 = analisis.get("gt1", {})
+    live = analisis.get("live", {})
 
-    jarak_ke_high = live["high"] - price if live["high"] else 999
-    jarak_ke_low = price - live["low"] if live["low"] else 999
-    total_wick = atas + bawah if (atas + bawah) > 0 else 1
-    imbalance = (atas - bawah) / total_wick
-
-    skor = 5
-    sinyal = "🟠 TUNGGU"
-    tipe = "Netral"
+    score = 0
     alasan = []
-    arah = None
 
-    if abs(neto) >= 8 and abs(g1["neto"]) >= 6 and (g1["julat"] == 0 or julat > g1["julat"] * 1.15):
-        if neto > 0 and g1["neto"] > 0:
-            sinyal = "🟢 SINYAL A – Momentum Kuat BUY"
-            tipe = "A"
-            arah = "BUY"
-            skor = 8 + min(2, max(0, neto // 5))
-            alasan.append(f"Neto LIVE {_neto(neto)} & GT1 {_neto(g1['neto'])} sejalan kuat")
-            if g1["julat"]:
-                alasan.append(f"Julat melebar ({_pts(julat)} vs GT1 {_pts(g1['julat'])})")
-            else:
-                alasan.append(f"Julat LIVE {_pts(julat)} poin")
-        elif neto < 0 and g1["neto"] < 0:
-            sinyal = "🔴 SINYAL A – Momentum Kuat SELL"
-            tipe = "A"
-            arah = "SELL"
-            skor = 8 + min(2, max(0, abs(neto) // 5))
-            alasan.append(f"Neto LIVE {_neto(neto)} & GT1 {_neto(g1['neto'])} sejalan kuat")
-            if g1["julat"]:
-                alasan.append(f"Julat melebar ({_pts(julat)} vs GT1 {_pts(g1['julat'])})")
-            else:
-                alasan.append(f"Julat LIVE {_pts(julat)} poin")
+    # 1. Neto LIVE vs GT1
+    neto_live = live.get("neto", 0)
+    neto_gt1 = gt1.get("neto", 0)
+    if neto_live > 0 and neto_gt1 > 0:
+        score += 2
+        alasan.append("Neto LIVE & GT1 positif")
+    elif neto_live < 0 and neto_gt1 < 0:
+        score -= 2
+        alasan.append("Neto LIVE & GT1 negatif")
 
-    elif (g2["neto"] * g3["neto"] > 0) and abs(g2["neto"]) >= 5:
-        if g2["neto"] > 0 and neto <= 3 and jarak_ke_low < 15:
-            sinyal = "🟢 SINYAL B – Pullback BUY"
-            tipe = "B"
-            arah = "BUY"
-            skor = 7
-            alasan.append("Trend utama naik (GT2 & GT3 positif)")
-            alasan.append(f"Harga pullback dekat low (jarak {_n(jarak_ke_low)})")
-        elif g2["neto"] < 0 and neto >= -3 and jarak_ke_high < 15:
-            sinyal = "🔴 SINYAL B – Pullback SELL"
-            tipe = "B"
-            arah = "SELL"
-            skor = 7
-            alasan.append("Trend utama turun (GT2 & GT3 negatif)")
-            alasan.append(f"Harga pullback dekat high (jarak {_n(jarak_ke_high)})")
+    # 2. Inti vs Awal
+    if live.get("inti", 0) > live.get("awal", 0):
+        score += 1
+        alasan.append("Inti di atas Awal")
+    elif live.get("inti", 0) < live.get("awal", 0):
+        score -= 1
+        alasan.append("Inti di bawah Awal")
 
-    elif (
-        (g1["julat"] > 0 and g1["julat"] < 28)
-        and (g2["julat"] == 0 or g2["julat"] < 30)
-        and (g3["julat"] == 0 or g3["julat"] < 32)
-    ) or (julat > 0 and julat < 25 and not a["has_gt_history"]):
-        if jarak_ke_low < 12:
-            sinyal = "🟢 SINYAL C – Range BUY (dekat lembah)"
-            tipe = "C"
-            arah = "BUY"
-            skor = 6
-            alasan.append("Julat sempit → mean reversion")
-            alasan.append(f"Harga sangat dekat low ({_n(jarak_ke_low)})")
-        elif jarak_ke_high < 12:
-            sinyal = "🔴 SINYAL C – Range SELL (dekat puncak)"
-            tipe = "C"
-            arah = "SELL"
-            skor = 6
-            alasan.append("Julat sempit → mean reversion")
-            alasan.append(f"Harga sangat dekat high ({_n(jarak_ke_high)})")
+    # 3. Julat (volatilitas)
+    julat = live.get("julat", 0)
+    if julat > 600:
+        score += 1 if score >= 0 else -1
+        alasan.append(f"Julat tinggi ({_pts(julat)})")
 
-    elif abs(imbalance) > 0.45 and abs(neto) >= 4:
-        if imbalance > 0.45 and neto < 0:
-            sinyal = "🔴 SINYAL D – Tekanan Jual Kuat"
-            tipe = "D"
-            arah = "SELL"
-            skor = 7
-            alasan.append(f"Imbalance Atas dominan ({_pts(atas)} vs {_pts(bawah)})")
-            alasan.append(f"Neto LIVE {_neto(neto)} mendukung tekanan jual")
-        elif imbalance < -0.45 and neto > 0:
-            sinyal = "🟢 SINYAL D – Tekanan Beli Kuat"
-            tipe = "D"
-            arah = "BUY"
-            skor = 7
-            alasan.append(f"Imbalance Bawah dominan ({_pts(bawah)} vs {_pts(atas)})")
-            alasan.append(f"Neto LIVE {_neto(neto)} mendukung tekanan beli")
+    # 4. Atas vs Bawah LIVE
+    atas = live.get("atas", 0)
+    bawah = live.get("bawah", 0)
+    if atas > bawah * 1.3:
+        score += 1
+        alasan.append("Atas dominan")
+    elif bawah > atas * 1.3:
+        score -= 1
+        alasan.append("Bawah dominan")
 
-    elif (g3["neto"] > 0 and g2["neto"] > 0 and g1["neto"] > 0 and neto > 0) or (
-        g3["neto"] < 0 and g2["neto"] < 0 and g1["neto"] < 0 and neto < 0
-    ):
-        if neto > 0:
-            sinyal = "🟢 SINYAL E – Konvergensi BUY (4 bar sejalan)"
-            tipe = "E"
-            arah = "BUY"
-            skor = 9
-        else:
-            sinyal = "🔴 SINYAL E – Konvergensi SELL (4 bar sejalan)"
-            tipe = "E"
-            arah = "SELL"
-            skor = 9
-        alasan.append("GT3 → GT2 → GT1 → LIVE semuanya searah")
-        alasan.append("Konfirmasi momentum multi-bar sangat kuat")
-
-    if tipe == "Netral" and abs(neto) >= 10:
-        if neto > 0:
-            sinyal = "🟢 SINYAL DASAR – Neto kuat BUY"
-            tipe = "Dasar"
-            arah = "BUY"
-            skor = 6
-            alasan.append(f"Neto LIVE {_neto(neto)} cukup kuat (tanpa konfirmasi multi-bar)")
-        else:
-            sinyal = "🔴 SINYAL DASAR – Neto kuat SELL"
-            tipe = "Dasar"
-            arah = "SELL"
-            skor = 6
-            alasan.append(f"Neto LIVE {_neto(neto)} cukup kuat (tanpa konfirmasi multi-bar)")
-
-    if tipe == "Netral":
-        alasan.append("Belum ada kondisi GT yang cukup kuat")
-        if not a["has_gt_history"]:
-            alasan.append("Data GT1/GT2/GT3 belum tersedia — pastikan EA Genesis aktif")
-        else:
-            alasan.append("Tunggu konfirmasi lebih jelas (Neto / Julat / Imbalance)")
-
-    alasan_text = "\n".join([f"• {x}" for x in alasan])
-
-    if arah == "BUY":
-        sl_ide = (live["low"] - 5) if live["low"] else price - 15
-        tp_ide = (live["high"] + 10) if live["high"] else price + 25
-    elif arah == "SELL":
-        sl_ide = (live["high"] + 5) if live["high"] else price + 15
-        tp_ide = (live["low"] - 10) if live["low"] else price - 25
+    # Tentukan kode sinyal
+    if score >= 4:
+        kode, arah = "A", "BUY KUAT"
+    elif score >= 2:
+        kode, arah = "B", "BUY"
+    elif score <= -4:
+        kode, arah = "E", "SELL KUAT"
+    elif score <= -2:
+        kode, arah = "D", "SELL"
     else:
-        sl_ide = tp_ide = None
+        kode, arah = "C", "NETRAL / TUNGGU"
 
-    level_text = ""
-    if arah:
-        level_text = (
-            f"\n\n📍 <b>Ide Level:</b>\n"
-            f"• Entry  : sekitar {_n(price)}\n"
-            f"• SL ide : {_n(sl_ide)}\n"
-            f"• TP ide : {_n(tp_ide)}"
+    return {
+        "kode": kode,
+        "arah": arah,
+        "score": score,
+        "alasan": " · ".join(alasan) if alasan else "Kondisi seimbang",
+        "neto_live": neto_live,
+        "julat": julat,
+        "atas": atas,
+        "bawah": bawah,
+    }
+
+
+# ─────────────────────────────────────────────
+# FORMAT TABEL GT (persis gambar)
+# ─────────────────────────────────────────────
+
+def format_gt_table(analisis: Dict[str, Any]) -> str:
+    """
+    Output HTML Telegram yang 100% mirip dashboard Genesis.
+    """
+    gt3 = analisis.get("gt3", {})
+    gt2 = analisis.get("gt2", {})
+    gt1 = analisis.get("gt1", {})
+    live = analisis.get("live", {})
+    waktu = analisis.get("waktu", "—")
+
+    def row(label: str, key: str, formatter=_n) -> str:
+        return (
+            f"<b>{_h(label)}</b>  "
+            f"{formatter(gt3.get(key))}  "
+            f"{formatter(gt2.get(key))}  "
+            f"{formatter(gt1.get(key))}  "
+            f"<b>{formatter(live.get(key))}</b>"
         )
 
-    src = a.get("source") or data.get("source") or "-"
-    if "genesis" in str(src).lower() or a["from_mt5"]:
-        src_label = "Genesis EA Kebun Saldo"
+    lines = [
+        "<b>Genesis Riwayat Angka Faktual Informasi Keuangan</b>",
+        "",
+        "<code>[ GT3 ]   [ GT2 ]   [ GT1 ]   [ GT LIVE ]</code>",
+        f"⏰  {_h(waktu)}",
+        "",
+        row("Tinggi", "tinggi", _n),
+        row("Atas",   "atas",   _pts),
+        row("Bawah",  "bawah",  _pts),
+        row("Rendah", "rendah", _n),
+        row("Awal",   "awal",   _n),
+        row("Neto",   "neto",   _neto),
+        row("Inti",   "inti",   _n),
+        row("Julat",  "julat",  _pts),
+        "",
+        "<i>Sumber: Genesis EA · Kebun Saldo</i>",
+    ]
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────
+# FORMAT LAIN (Harga, Sinyal, Arus, Puncak, Full)
+# ─────────────────────────────────────────────
+
+def format_harga(analisis: Dict[str, Any], extra: Optional[Dict] = None) -> str:
+    """Menu 💰 Harga – Harga Live M1 + GT"""
+    bid = analisis.get("bid") or analisis.get("live", {}).get("inti")
+    live = analisis.get("live", {})
+
+    lines = [
+        "<b>Harga Live M1</b>",
+        f"Bid   {_n(bid)}",
+        f"High  {_n(live.get('tinggi'))}",
+        f"Low   {_n(live.get('rendah'))}",
+        f"Open  {_n(live.get('awal'))}",
+        "",
+        format_gt_table(analisis),
+    ]
+    return "\n".join(lines)
+
+
+def format_sinyal(analisis: Dict[str, Any]) -> str:
+    """Menu sinyal pintar A–E"""
+    sinyal = buat_sinyal_pintar(analisis)
+    live = analisis.get("live", {})
+
+    emoji = {
+        "A": "🟢",
+        "B": "🟢",
+        "C": "⚪",
+        "D": "🔴",
+        "E": "🔴",
+    }.get(sinyal["kode"], "⚪")
+
+    lines = [
+        f"<b>Sinyal {sinyal['kode']} {emoji} {sinyal['arah']}</b>",
+        f"Score   : {sinyal['score']}",
+        f"Alasan  : {_h(sinyal['alasan'])}",
+        "",
+        f"Neto LIVE : {_neto(live.get('neto'))}",
+        f"Atas      : {_pts(live.get('atas'))}",
+        f"Bawah     : {_pts(live.get('bawah'))}",
+        f"Julat     : {_pts(live.get('julat'))}",
+        "",
+        format_gt_table(analisis),
+    ]
+    return "\n".join(lines)
+
+
+def format_arus(analisis: Dict[str, Any]) -> str:
+    """Menu Arus (arah dominan)"""
+    live = analisis.get("live", {})
+    atas = live.get("atas", 0)
+    bawah = live.get("bawah", 0)
+
+    if atas > bawah:
+        arah = f"ARUS ATAS  {_pts(atas)} ▲"
+    elif bawah > atas:
+        arah = f"ARUS BAWAH {_pts(bawah)} ▼"
     else:
-        src_label = str(src)
+        arah = "ARUS SEIMBANG"
 
-    gt_status = "✅ GT1–GT3 tersedia" if a["has_gt_history"] else "⚠️ Hanya LIVE (tanpa riwayat GT)"
+    lines = [
+        f"<b>Arus LIVE</b>",
+        f"{arah}",
+        f"Neto  {_neto(live.get('neto'))}",
+        f"Julat {_pts(live.get('julat'))}",
+        "",
+        format_gt_table(analisis),
+    ]
+    return "\n".join(lines)
 
-    result = (
-        f"🎯 <b>{sinyal}</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"Skor Kekuatan : <b>{skor}/10</b>\n"
-        f"Harga         : <b>{_n(price)}</b>\n"
-        f"Neto LIVE     : {_neto(neto)}   |  Julat: {_pts(julat)}\n"
-        f"Atas/Bawah    : {_pts(atas)} / {_pts(bawah)}\n"
-        f"Data          : {gt_status}\n"
-        f"Sumber        : {src_label}\n\n"
-        f"<b>Alasan berbasis GT:</b>\n{alasan_text}"
-        f"{level_text}\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚠️ Bukan saran finansial. Selalu gunakan risk management ketat."
+
+def format_puncak_lembah(analisis: Dict[str, Any]) -> str:
+    """Menu Puncak / Lembah"""
+    live = analisis.get("live", {})
+    lines = [
+        "<b>Puncak &amp; Lembah LIVE</b>",
+        f"Puncak (Tinggi) : {_n(live.get('tinggi'))}",
+        f"Lembah (Rendah) : {_n(live.get('rendah'))}",
+        f"Atas            : {_pts(live.get('atas'))}",
+        f"Bawah           : {_pts(live.get('bawah'))}",
+        f"Neto            : {_neto(live.get('neto'))}",
+        "",
+        format_gt_table(analisis),
+    ]
+    return "\n".join(lines)
+
+
+def format_full(analisis: Dict[str, Any]) -> str:
+    """Menu Full report"""
+    sinyal = buat_sinyal_pintar(analisis)
+    live = analisis.get("live", {})
+
+    lines = [
+        "<b>FULL REPORT · Genesis</b>",
+        "",
+        f"Sinyal : <b>{sinyal['kode']}</b> {sinyal['arah']} (score {sinyal['score']})",
+        f"Alasan : {_h(sinyal['alasan'])}",
+        "",
+        f"Bid    {_n(analisis.get('bid'))}",
+        f"Neto   {_neto(live.get('neto'))}",
+        f"Julat  {_pts(live.get('julat'))}",
+        "",
+        format_gt_table(analisis),
+    ]
+    return "\n".join(lines)
+
+
+def format_tren(analisis: Dict[str, Any]) -> str:
+    """Menu Tren singkat"""
+    sinyal = buat_sinyal_pintar(analisis)
+    return (
+        f"<b>Tren Saat Ini</b>\n"
+        f"Sinyal {sinyal['kode']} · {sinyal['arah']}\n"
+        f"{_h(sinyal['alasan'])}"
     )
-    return result

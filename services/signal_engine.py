@@ -300,6 +300,33 @@ def buat_sinyal_pintar(data: Dict[str, Any]) -> str:
             f"• TP ide : {_n(tp_ide)}"
         )
 
+    # Rekomendasi mode EA berdasarkan kondisi GT
+    if tipe in ("A", "E"):
+        ea_mode = "Trobosan / Sinyal GT (momentum kuat)"
+    elif tipe == "B":
+        ea_mode = "Zigzag Bounce atau Sinyal GT (pullback)"
+    elif tipe == "C":
+        ea_mode = "Zigzag / Layer (julat sempit)"
+    elif tipe == "D":
+        ea_mode = "Sinyal GT / Trobosan (tekanan arah)"
+    else:
+        ea_mode = "Tunggu — atau Layer hati-hati"
+
+    ea_text = (
+        f"\n\n🤖 <b>Mode EA disarankan:</b> {ea_mode}\n"
+        f"• Pilih di Inputs EA: InpStrategy\n"
+        f"• 0=Trobosan · 1=Layer · 2=Zigzag · 3=Sinyal GT"
+    )
+
+    # Status EA dari genesis (jika ada)
+    raw = data.get("raw") if isinstance(data.get("raw"), dict) else {}
+    if raw.get("strategy"):
+        ea_text += (
+            f"\n• EA aktif sekarang: <b>{raw.get('strategy')}</b>"
+            f" | sinyal: {raw.get('signal_type', '-')}"
+            f" | step: {raw.get('martingale_step', '-')}"
+        )
+
     src = a.get("source") or data.get("source") or "-"
     if "genesis" in str(src).lower() or a["from_mt5"]:
         src_label = "Genesis EA Kebun Saldo"
@@ -318,7 +345,8 @@ def buat_sinyal_pintar(data: Dict[str, Any]) -> str:
         f"Data          : {gt_status}\n"
         f"Sumber        : {src_label}\n\n"
         f"<b>Alasan berbasis GT:</b>\n{alasan_text}"
-        f"{level_text}\n"
+        f"{level_text}"
+        f"{ea_text}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"⚠️ Bukan saran finansial. Selalu gunakan risk management ketat."
     )

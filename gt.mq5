@@ -1,12 +1,12 @@
 //+------------------------------------------------------------------+
 //|                                              Grafik Tabranij.mq5 |
-//|                                                  KEBUN SALDO MT5 |
+//|                          Membaca, Menulis & Memburu Saldo di MT5 |
 //|                                          https://cindo.pages.dev |
 //+------------------------------------------------------------------+
 #property copyright   "MOCHAMAD TABRANI (c) 2026"
 #property link        "https://cindo.pages.dev"
 #property version     "1.10"
-#property description "EA GT Pesaldo - Multi Strategy Komando Profit & Keamanan"
+#property description "EA Memburu Saldo di Mt5 - Multi Strategy Komando Profit & Keamanan"
 #property description "================================="
 #property description "Strategi: Trobosan | Layer | Zigzag | Sinyal GT (A-E)"
 #property description "Didesain spesifik untuk volatilitas tinggi (BTCUSD, XAUUSD, GOLDmicro)."
@@ -41,7 +41,7 @@ enum ENUM_STRATEGY
 
 //--- System Information
 input string          _s0                  = "=========== EA PESALDO ==========="; 
-sinput string         Info_System          = "EA Pesaldo "; 
+sinput string         Info_System          = "EA Memburu Saldo "; 
 sinput string         Info_Version         = "v1.10 [Multi-Strategy GT]"; 
 sinput string         Info_Author          = "MOCHAMAD TABRANI";                  
 sinput string         Info_Support         = "cindo.pages.dev";   
@@ -54,7 +54,7 @@ input int             Panel_Width          = 600;      // Total Dashboard Width
 
 //--- Trading Engine Settings
 input string          _s2                  = "======== GRAFIK TABRANIJ ALGO STRATEGY ========";
-input ENUM_STRATEGY   InpStrategy          = STRAT_BREAKOUT; // Pilih Strategi Trading
+input ENUM_STRATEGY   InpStrategy          = STRAT_BREAKOUT; // Pilih Strategi Memburu Saldo
 input ENUM_TIMEFRAMES InpGTTimeframe       = PERIOD_H1;     // GT Besar Timeframe (Signal Basis)
 input double          InpLot               = 0.01;          // Base Lot Volume
 input double          InpMultiplier        = 2.0;           // Martingale / Layer Volume Multiplier

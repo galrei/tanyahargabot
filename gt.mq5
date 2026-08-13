@@ -536,7 +536,7 @@ void CreateAboutTab(int y)
    lineY += 50;
    CreateRect(PREFIX + "Ab_Box",    contentX, lineY, contentW, 100, gClrBg, clrSilver);
    CreateLabel(PREFIX + "Ab_Status",  contentX + 10, lineY + 10, "STATUS SISTEM: OPERASIONAL",                     gClrSuccess, 9);
-   CreateLabel(PREFIX + "Ab_Lince",   contentX + 10, lineY + 30, "License: KEBUN SALDO Agustus 2026",                clrSilver,   8);
+   CreateLabel(PREFIX + "Ab_Lince",   contentX + 10, lineY + 30, "License: BLUCHIP Agustus 2026",                clrSilver,   8);
    CreateLabel(PREFIX + "Ab_Support", contentX + 10, lineY + 70, "Support: mql5.com/getbos | t.me/jackmusk",   gClrAccent,  8);
 }
 

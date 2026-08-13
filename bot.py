@@ -616,7 +616,7 @@ def format_mt5_genesis(data: Dict[str, Any]) -> str:
         tf_raw = tf_raw.replace("PERIOD_", "", 1)
     tf = _h(tf_raw)
     waktu = _h(data.get("time") or raw.get("time") or "-")
-    sumber = _h("Genesis EA Kebun Saldo")
+    sumber = _h("Genesis Bluchip")
 
     balance = raw.get("balance")
     equity = raw.get("equity")

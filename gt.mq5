@@ -5,11 +5,12 @@
 //+------------------------------------------------------------------+
 #property copyright   "MOCHAMAD TABRANI (c) 2026"
 #property link        "https://cindo.pages.dev"
-#property version     "1.10"
+#property version     "1.11"
 #property description "EA Memburu Saldo di Mt5 - Multi Strategy Komando Profit & Keamanan"
 #property description "================================="
 #property description "Strategi: Trobosan | Layer | Zigzag | Sinyal GT (A-E)"
-#property description "Didesain spesifik untuk volatilitas tinggi (BTCUSD, XAUUSD, GOLDmicro)."
+#property description "v1.11: +Pengaman DD Equity, Loss Harian, Max Spread, Cooldown,"
+#property description "      +Kalibrasi Sinyal ATR, Throttle I/O, Tombol Close All."
 
 //+------------------------------------------------------------------+
 //| Include                                                          |
@@ -42,7 +43,7 @@ enum ENUM_STRATEGY
 //--- System Information
 input string          _s0                  = "=========== EA PESALDO ==========="; 
 sinput string         Info_System          = "EA Memburu Saldo "; 
-sinput string         Info_Version         = "v1.10 [Multi-Strategy GT]"; 
+sinput string         Info_Version         = "v1.11 [Multi-Strategy GT]"; 
 sinput string         Info_Author          = "MOCHAMAD TABRANI";                  
 sinput string         Info_Support         = "cindo.pages.dev";   
 
@@ -67,6 +68,26 @@ input bool            InpUseGTSLTP         = true;          // Pakai level GT un
 input bool            InpRequireSignal     = false;         // Hanya entry jika sinyal A-E aktif
 input int             InpMagic             = 888999;        // Algorithm Serial ID
 
+//--- [v1.11] Keamanan & Optimasi
+input string          _s3                  = "======== KEAMANAN & OPTIMASI (v1.11) ========";
+input int             InpMaxSpreadPts      = 40;            // Max Spread (pts) utk entry baru (0=off)
+input double          InpMaxEquityDDPct    = 25.0;          // Stop entry jika DD Equity > % (0=off)
+input double          InpMaxDailyLossPct   = 10.0;          // Stop entry jika Loss Harian > % (0=off)
+input double          InpMaxLotCap         = 5.0;           // Batas Lot Maksimum per posisi
+input int             InpMinSecBetweenTrades = 5;           // Cooldown antar entry (detik, 0=off)
+input bool            InpOncePerBar        = true;          // Maks 1 entry baru per bar
+input bool            InpStopOnMaxStep     = true;          // Hentikan entry saat step maksimal
+
+//--- [v1.11] Kalibrasi Sinyal GT A-E
+input string          _s4                  = "======== KALIBRASI SINYAL GT A-E (v1.11) ========";
+input bool            InpUseATRScale       = true;          // Skala threshold dgn ATR simbol
+input int             InpATRPeriod         = 14;            // Periode ATR
+input double          InpATRFactor         = 1.0;           // Faktor ATR (1.0 = 1x ATR)
+input int             InpSigMomPts         = 8;             // Sinyal A: neto minimal (pts)
+input int             InpSigPullbackPts    = 15;            // Sinyal B: jarak wick (pts)
+input int             InpSigRangePts       = 28;            // Sinyal C: julat range maks (pts)
+input int             InpSigBasePts        = 10;            // Sinyal Dasar: neto minimal (pts)
+
 //--- Theme & Color Settings
 input string          _s5                  = "======== UI THEME & PALETTE ========";
 input ENUM_THEME      InpTheme             = THEME_ONYX_GOLD;   // Active Visual Theme
@@ -90,8 +111,6 @@ datetime lastBarTime = 0;
 CTrade   trade;
 
 // Sequential State Machine
-double   g_lastLot      = 0;  // Volume dari posisi terakhir yang ditutup
-int      g_lastDeal      = -1; // Ticket deal terakhir yang telah diproses
 bool     g_isFirstTrade = true; // Flag untuk perdagangan pertama
 
 // Multi-strategy state (shared with WriteGenesisJSON & trading logic)
@@ -100,6 +119,18 @@ ENUM_POSITION_TYPE g_lastDirection   = (ENUM_POSITION_TYPE)-1;
 string             g_lastSignalType  = "NETRAL";
 int                g_lastSignalScore = 0;
 string             g_activeStrategy  = "BREAKOUT";
+
+// [v1.11] Pengaman & throttle
+datetime           g_lastEntryTime   = 0;     // Cooldown antar entry
+datetime           g_lastEntryBar    = 0;     // Bar terakhir entry (once per bar)
+double             g_peakEquity      = 0;     // Equity puncak sejak EA start
+int                g_dayKey          = 0;     // Kunci hari server (YYYYMMDD)
+double             g_dayStartEquity  = 0;
+double             g_dayPeakEquity   = 0;
+uint               g_lastJsonMs      = 0;     // Throttle JSON (ms)
+uint               g_lastGuiMs       = 0;     // Throttle GUI (ms)
+uint               g_lastLevelsMs    = 0;     // Throttle level (ms)
+int                g_atrHandle       = INVALID_HANDLE; // Handle ATR utk kalibrasi sinyal
 
 #define PREFIX          "GRAFIK TABRANIJ"
 #define COLOR_BG        C'45,45,45'    // Charcoal Grey (matching the image)
@@ -229,6 +260,11 @@ void OnDeinit(const int reason)
    EventKillTimer(); 
    DeleteAllObjects(); 
    DeleteVisualization(); 
+   if(g_atrHandle != INVALID_HANDLE)
+   {
+      IndicatorRelease(g_atrHandle);
+      g_atrHandle = INVALID_HANDLE;
+   }
    
    if(reason == REASON_REMOVE || reason == REASON_CLOSE)
    {
@@ -241,10 +277,31 @@ void OnDeinit(const int reason)
 
 void OnTick()                    
 { 
-   UpdateGUILabels(); 
-   ExecuteTradingLogic();
-   if(extShowGTChart) DrawGTLevels();
-   WriteGenesisJSON();   // kirim data ke TanyaHargaBot
+   uint nowMs = GetTickCount();
+   
+   // GUI update (throttle ~100 ms agar ringan di simbol cepat)
+   if(nowMs - g_lastGuiMs >= 100)
+   {
+      UpdateGUILabels(); 
+      g_lastGuiMs = nowMs;
+   }
+   
+   UpdateSafetyTrackers();       // update equity puncak & loss harian
+   ExecuteTradingLogic();        // entry baru di-filter oleh IsTradingAllowed()
+   
+   // Level visualization (throttle ~1 dtk)
+   if(extShowGTChart && nowMs - g_lastLevelsMs >= 1000)
+   {
+      DrawGTLevels(); 
+      g_lastLevelsMs = nowMs;
+   }
+   
+   // JSON ke TanyaHargaBot (throttle ~1 dtk, hindari I/O tiap tick)
+   if(nowMs - g_lastJsonMs >= 1000)
+   {
+      WriteGenesisJSON(); 
+      g_lastJsonMs = nowMs;
+   }
 }
 
 void OnTimer() { UpdateCountdown(); }
@@ -289,18 +346,81 @@ void OnChartEvent(const int id, const long& lparam, const double& dparam, const 
          if(!extShowGTChart) DeleteVisualization(); 
          ResetDashboard(); 
       }
+      else if(sparam == PREFIX + "BTN_CLOSEALL")  // [v1.11] Tombol darurat
+      { 
+         CloseMyPositions(); 
+      }
    }
 }
 
-bool IsNewBar()
+//+------------------------------------------------------------------+
+//| [v1.11] Fungsi Keamanan                                          |
+//+------------------------------------------------------------------+
+
+// Update tracker equity puncak & loss harian (panggil tiap tick)
+void UpdateSafetyTrackers()
 {
-   datetime currentBarTime = iTime(_Symbol, PERIOD_CURRENT, 0);
-   if(currentBarTime != lastBarTime)
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(equity > g_peakEquity) g_peakEquity = equity;
+
+   MqlDateTime dt;
+   TimeToStruct(TimeCurrent(), dt);
+   int key = dt.year * 10000 + dt.mon * 100 + dt.day;
+   if(key != g_dayKey)
    {
-      lastBarTime = currentBarTime;
-      return true;
+      g_dayKey          = key;
+      g_dayStartEquity  = equity;
+      g_dayPeakEquity   = equity;
    }
-   return false;
+   else if(equity > g_dayPeakEquity)
+      g_dayPeakEquity = equity;
+}
+
+double GetEquityDDPct()
+{
+   double eq = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(g_peakEquity > 0) return (g_peakEquity - eq) / g_peakEquity * 100.0;
+   return 0;
+}
+
+// Gerbang keamanan utama — SEMUA entry baru harus lolos fungsi ini
+bool IsTradingAllowed()
+{
+   // 1) Spread filter (hindari entry saat news/spread melebar)
+   if(InpMaxSpreadPts > 0)
+   {
+      long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+      if(spread > InpMaxSpreadPts) return false;
+   }
+   // 2) Cooldown antar entry
+   if(InpMinSecBetweenTrades > 0 && TimeCurrent() - g_lastEntryTime < InpMinSecBetweenTrades)
+      return false;
+   // 3) Maks 1 entry baru per bar (cegah re-entry berulang breakout)
+   if(InpOncePerBar && g_lastEntryBar == iTime(_Symbol, PERIOD_CURRENT, 0))
+      return false;
+   // 4) Martingale dihentikan saat mencapai max step (sampai profit)
+   if(InpStopOnMaxStep && g_martingaleStep >= InpMaxSteps)
+      return false;
+   // 5) Drawdown equity dari puncak
+   if(InpMaxEquityDDPct > 0 && g_peakEquity > 0)
+   {
+      double dd = (g_peakEquity - AccountInfoDouble(ACCOUNT_EQUITY)) / g_peakEquity * 100.0;
+      if(dd >= InpMaxEquityDDPct) return false;
+   }
+   // 6) Loss harian
+   if(InpMaxDailyLossPct > 0 && g_dayPeakEquity > 0)
+   {
+      double dd = (g_dayPeakEquity - AccountInfoDouble(ACCOUNT_EQUITY)) / g_dayPeakEquity * 100.0;
+      if(dd >= InpMaxDailyLossPct) return false;
+   }
+   return true;
+}
+
+// Tandai bahwa entry berhasil dilakukan (cooldown + once per bar)
+void MarkEntryUsed()
+{
+   g_lastEntryTime = TimeCurrent();
+   g_lastEntryBar  = iTime(_Symbol, PERIOD_CURRENT, 0);
 }
 
 //+------------------------------------------------------------------+
@@ -343,6 +463,7 @@ void DrawGTLevels()
    DrawHLine(VIS_PREFIX + "Inti",   close, gClrValue,  STYLE_SOLID, 2);
 }
 
+// [v1.11] Disederhanakan — style dipakai apa adanya
 void DrawHLine(string name, double price, color clr, ENUM_LINE_STYLE style, int width = 1)
 {
    if(ObjectFind(0, name) < 0)
@@ -351,8 +472,8 @@ void DrawHLine(string name, double price, color clr, ENUM_LINE_STYLE style, int 
       ObjectSetDouble(0, name, OBJPROP_PRICE, price);
       
    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
-   ObjectSetInteger(0, name, OBJPROP_STYLE, InpLevelStyle == STYLE_SOLID ? style : InpLevelStyle);
-   ObjectSetInteger(0, name, OBJPROP_WIDTH, width == 1 ? InpLevelWidth : width);
+   ObjectSetInteger(0, name, OBJPROP_STYLE, style);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH, (width == 1) ? InpLevelWidth : width);
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
    if(InpShowLabels)
       ObjectSetString(0, name, OBJPROP_TEXT, " " + StringSubstr(name, StringLen(VIS_PREFIX)));
@@ -528,7 +649,7 @@ void CreateAboutTab(int y)
    CreateLabel(PREFIX + "Ab_DevVal",    contentX + 120, lineY, "MOCHAMAD TABRANI", gClrValue, 8);
    lineY += 20;
    CreateLabel(PREFIX + "Ab_VerLabel",  contentX,       lineY, "Version:",      gClrLabel, 8);
-   CreateLabel(PREFIX + "Ab_VerVal",    contentX + 120, lineY, "0.01 Professional", gClrValue, 8);
+   CreateLabel(PREFIX + "Ab_VerVal",    contentX + 120, lineY, "1.11 Professional", gClrValue, 8);
    lineY += 20;
    CreateLabel(PREFIX + "Ab_Method",    contentX,       lineY, "Methodology:",  gClrLabel, 8);
    CreateLabel(PREFIX + "Ab_MethodVal", contentX + 120, lineY, "Grafik Tabranij (GT) Matematika Pasar", gClrValue, 8);
@@ -579,6 +700,10 @@ void CreateTradingTab(int y)
    CreateLabel(PREFIX + "Tr_Note",  contentX, lineY, "Ubah strategi via F7 → Inputs → InpStrategy", clrSilver, 8);
    lineY += 15;
    CreateLabel(PREFIX + "Tr_Note2", contentX, lineY, "Trobosan | Layer | Zigzag | Sinyal GT (A-E)", clrSilver, 8);
+
+   // [v1.11] Tombol darurat tutup semua posisi
+   lineY += 30;
+   CreateButton(PREFIX + "BTN_CLOSEALL", X_Offset + Panel_Width/2, lineY, 220, 35, "TUTUP SEMUA POSISI", clrWhite, gClrDanger);
 }
 
 void CreateColorsTab(int y)
@@ -995,7 +1120,10 @@ void WriteGenesisJSON()
    json += "\"signal_type\":\"" + g_lastSignalType + "\",";
    json += "\"signal_score\":" + IntegerToString(g_lastSignalScore) + ",";
    json += "\"martingale_step\":" + IntegerToString(g_martingaleStep) + ",";
-   json += "\"positions\":" + IntegerToString(CountMyPositions());
+   json += "\"positions\":" + IntegerToString(CountMyPositions()) + ",";
+   // [v1.11] Status pengaman utk TanyaHargaBot
+   json += "\"trading_allowed\":" + (IsTradingAllowed() ? "true" : "false") + ",";
+   json += "\"equity_dd_pct\":" + DoubleToString(GetEquityDDPct(), 2);
    json += "}";
 
    // Tulis ke MQL5/Files/genesis_data.json (folder terminal)
@@ -1117,12 +1245,15 @@ double NormalizeLot(double lot)
    return lot;
 }
 
+// [v1.11] Lot dibatasi oleh InpMaxLotCap
 double CalcNextLot()
 {
    double nextLot = InpLot;
    if(g_martingaleStep > 0)
       nextLot = InpLot * MathPow(InpMultiplier, g_martingaleStep);
-   return NormalizeLot(nextLot);
+   nextLot = NormalizeLot(nextLot);
+   if(nextLot > InpMaxLotCap) nextLot = NormalizeLot(InpMaxLotCap);
+   return nextLot;
 }
 
 int GetGT_RangePoints(int shift = 1)
@@ -1134,6 +1265,7 @@ int GetGT_RangePoints(int shift = 1)
 }
 
 //--- Hitung SL/TP dari level GT atau fallback points
+// [v1.11] + validasi jarak minimal SL/TP sesuai aturan broker
 void CalcGTSLTP(ENUM_POSITION_TYPE type, double entry, double &sl, double &tp)
 {
    double prevHigh = iHigh(_Symbol, InpGTTimeframe, 1);
@@ -1169,8 +1301,28 @@ void CalcGTSLTP(ENUM_POSITION_TYPE type, double entry, double &sl, double &tp)
          tp = NormalizeDouble(entry - InpTP * myPoint, myDigits);
       }
    }
+
+   // Pastikan jarak SL/TP >= stops level broker (cek SYMBOL_TRADE_STOPS_LEVEL)
+   long stopsLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   if(stopsLevel > 0)
+   {
+      double minDist = stopsLevel * myPoint;
+      if(type == POSITION_TYPE_BUY)
+      {
+         if(sl > 0 && entry - sl < minDist) sl = entry - minDist;
+         if(tp > 0 && tp - entry < minDist) tp = entry + minDist;
+      }
+      else
+      {
+         if(sl > 0 && sl - entry < minDist) sl = entry + minDist;
+         if(tp > 0 && entry - tp < minDist) tp = entry - minDist;
+      }
+   }
+   sl = NormalizeDouble(sl, myDigits);
+   tp = NormalizeDouble(tp, myDigits);
 }
 
+// [v1.11] Cek margin cukup + validasi sebelum kirim order
 bool OpenPosition(ENUM_POSITION_TYPE type, double lot, string comment)
 {
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
@@ -1178,6 +1330,21 @@ bool OpenPosition(ENUM_POSITION_TYPE type, double lot, string comment)
    double price = (type == POSITION_TYPE_BUY) ? ask : bid;
    double sl = 0, tp = 0;
    CalcGTSLTP(type, price, sl, tp);
+
+   // Cek margin cukup sebelum entry
+   double marginNeed = 0;
+   ENUM_ORDER_TYPE ot = (type == POSITION_TYPE_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+   if(!OrderCalcMargin(ot, _Symbol, lot, price, marginNeed))
+   {
+      Print("GT: Gagal hitung margin untuk ", lot, " lot.");
+      return false;
+   }
+   if(marginNeed > AccountInfoDouble(ACCOUNT_MARGIN_FREE))
+   {
+      Print("GT: Margin tidak cukup. Butuh ", DoubleToString(marginNeed, 2),
+            " | Free: ", DoubleToString(AccountInfoDouble(ACCOUNT_MARGIN_FREE), 2));
+      return false;
+   }
 
    bool ok = false;
    if(type == POSITION_TYPE_BUY)
@@ -1187,6 +1354,7 @@ bool OpenPosition(ENUM_POSITION_TYPE type, double lot, string comment)
 
    if(ok)
    {
+      MarkEntryUsed();  // aktifkan cooldown + once per bar
       g_lastDirection = type;
       Print("GT [", g_activeStrategy, "] ", (type == POSITION_TYPE_BUY ? "BUY" : "SELL"),
             " | Lot:", DoubleToString(lot, 2),
@@ -1199,7 +1367,29 @@ bool OpenPosition(ENUM_POSITION_TYPE type, double lot, string comment)
    return ok;
 }
 
+// [v1.11] Unit threshold adaptif dari ATR (kalibrasi per simbol)
+int GetSignalUnitPts()
+{
+   int unit = InpSigBasePts;
+   if(InpUseATRScale)
+   {
+      if(g_atrHandle == INVALID_HANDLE)
+         g_atrHandle = iATR(_Symbol, InpGTTimeframe, InpATRPeriod);
+      if(g_atrHandle != INVALID_HANDLE)
+      {
+         double buf[];
+         if(CopyBuffer(g_atrHandle, 0, 0, 1, buf) == 1 && buf[0] > 0)
+         {
+            int atrPts = (int)(buf[0] / myPoint);
+            unit = MathMax(unit, (int)(atrPts * InpATRFactor));
+         }
+      }
+   }
+   return unit;
+}
+
 //--- Engine Sinyal GT A-E (mirror bot signal_engine)
+// [v1.11] Threshold dapat diskalakan otomatis dengan ATR
 // Return: 1=BUY, -1=SELL, 0=NETRAL; score 0-10
 int EvaluateGTSignal(int &score, string &label)
 {
@@ -1240,8 +1430,26 @@ int EvaluateGTSignal(int &score, string &label)
    int totalWick = atas0 + bawah0; if(totalWick <= 0) totalWick = 1;
    double imbalance = (double)(atas0 - bawah0) / totalWick;
 
+   // --- Threshold adaptif (ATR) ---
+   int momMin  = InpSigMomPts;
+   int pullPts = InpSigPullbackPts;
+   int rngMax  = InpSigRangePts;
+   int baseMin = InpSigBasePts;
+   int netoDMin = 4;
+   int unit = GetSignalUnitPts();
+   if(InpUseATRScale && unit > 0)
+   {
+      momMin   = MathMax(momMin,   (int)(unit * 0.5));
+      pullPts  = MathMax(pullPts,  (int)(unit * 0.15));
+      rngMax   = MathMax(rngMax,   (int)(unit * 0.6));
+      baseMin  = MathMax(baseMin,  (int)(unit * 0.4));
+      netoDMin = MathMax(netoDMin, (int)(unit * 0.25));
+   }
+   int jarakWickPts  = pullPts;
+   int jarakRangePts = MathMax(12, (int)(rngMax * 0.4));
+
    // Sinyal A – Momentum Kuat
-   if(MathAbs(neto0) >= 8 && MathAbs(neto1) >= 6 && (julat1 == 0 || julat0 > julat1 * 1.15))
+   if(MathAbs(neto0) >= momMin && MathAbs(neto1) >= 6 && (julat1 == 0 || julat0 > julat1 * 1.15))
    {
       if(neto0 > 0 && neto1 > 0)
       { label = "A_MOMENTUM_BUY"; score = 8 + MathMin(2, neto0 / 5); return 1; }
@@ -1252,23 +1460,23 @@ int EvaluateGTSignal(int &score, string &label)
    // Sinyal B – Pullback
    if(neto2 * neto3 > 0 && MathAbs(neto2) >= 5)
    {
-      if(neto2 > 0 && neto0 <= 3 && jarakLow < 15 * myPoint)
+      if(neto2 > 0 && neto0 <= 3 && jarakLow < jarakWickPts * myPoint)
       { label = "B_PULLBACK_BUY"; score = 7; return 1; }
-      if(neto2 < 0 && neto0 >= -3 && jarakHigh < 15 * myPoint)
+      if(neto2 < 0 && neto0 >= -3 && jarakHigh < jarakWickPts * myPoint)
       { label = "B_PULLBACK_SELL"; score = 7; return -1; }
    }
 
    // Sinyal C – Range
-   if((julat1 > 0 && julat1 < 28) && (julat2 == 0 || julat2 < 30) && (julat3 == 0 || julat3 < 32))
+   if((julat1 > 0 && julat1 < rngMax) && (julat2 == 0 || julat2 < (int)(rngMax * 1.1)) && (julat3 == 0 || julat3 < (int)(rngMax * 1.15)))
    {
-      if(jarakLow < 12 * myPoint)
+      if(jarakLow < jarakRangePts * myPoint)
       { label = "C_RANGE_BUY"; score = 6; return 1; }
-      if(jarakHigh < 12 * myPoint)
+      if(jarakHigh < jarakRangePts * myPoint)
       { label = "C_RANGE_SELL"; score = 6; return -1; }
    }
 
    // Sinyal D – Imbalance
-   if(MathAbs(imbalance) > 0.45 && MathAbs(neto0) >= 4)
+   if(MathAbs(imbalance) > 0.45 && MathAbs(neto0) >= netoDMin)
    {
       if(imbalance > 0.45 && neto0 < 0)
       { label = "D_PRESSURE_SELL"; score = 7; return -1; }
@@ -1285,7 +1493,7 @@ int EvaluateGTSignal(int &score, string &label)
    }
 
    // Dasar – Neto kuat
-   if(MathAbs(neto0) >= 10)
+   if(MathAbs(neto0) >= baseMin)
    {
       if(neto0 > 0) { label = "DASAR_BUY"; score = 6; return 1; }
       else          { label = "DASAR_SELL"; score = 6; return -1; }
@@ -1309,6 +1517,7 @@ bool CheckBreakout(ENUM_POSITION_TYPE &signalType)
 void LogicBreakout()
 {
    g_activeStrategy = "BREAKOUT";
+   if(!IsTradingAllowed()) return;
    if(CountMyPositions() > 0) return;
 
    if(InpRequireSignal)
@@ -1328,6 +1537,7 @@ void LogicBreakout()
 void LogicLayer()
 {
    g_activeStrategy = "LAYER";
+   if(!IsTradingAllowed()) return;
    int posCount = CountMyPositions();
    if(posCount >= InpMaxSteps) return;
 
@@ -1373,6 +1583,7 @@ void LogicLayer()
    }
 
    double lot = NormalizeLot(InpLot * MathPow(InpMultiplier, posCount));
+   if(lot > InpMaxLotCap) lot = NormalizeLot(InpMaxLotCap); // [v1.11] batas lot
    OpenPosition(prefer, lot, StringFormat("GT Layer #%d", posCount + 1));
 }
 
@@ -1380,6 +1591,7 @@ void LogicLayer()
 void LogicZigzag()
 {
    g_activeStrategy = "ZIGZAG";
+   if(!IsTradingAllowed()) return;
    if(CountMyPositions() > 0) return;
 
    double bid  = SymbolInfoDouble(_Symbol, SYMBOL_BID);
@@ -1422,6 +1634,7 @@ void LogicZigzag()
 void LogicSignal()
 {
    g_activeStrategy = "SIGNAL";
+   if(!IsTradingAllowed()) return;
    if(CountMyPositions() > 0) return;
 
    int sc; string lb;
@@ -1448,7 +1661,23 @@ void ExecuteTradingLogic()
    }
 }
 
+// [v1.11] Tombol darurat: tutup semua posisi milik EA ini
+void CloseMyPositions()
+{
+   int closed = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(PositionSelectByTicket(ticket))
+         if(PositionGetString(POSITION_SYMBOL) == _Symbol &&
+            PositionGetInteger(POSITION_MAGIC) == (long)InpMagic)
+            if(trade.PositionClose(ticket)) closed++;
+   }
+   if(closed > 0) Print("GT: Menutup ", closed, " posisi.");
+}
+
 //--- OnTradeTransaction: martingale step
+// [v1.11] Di max step → berhenti (bukan reset) jika InpStopOnMaxStep=true
 void OnTradeTransaction(const MqlTradeTransaction &trans,
                         const MqlTradeRequest     &request,
                         const MqlTradeResult      &result)
@@ -1473,43 +1702,22 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    }
    else if(profit < 0)
    {
+      if(InpStopOnMaxStep && g_martingaleStep >= InpMaxSteps)
+         return; // sudah di max step — tunggu profit, jangan tambah lagi
+
       g_martingaleStep++;
       if(g_martingaleStep >= InpMaxSteps)
       {
-         Print("GT: Max step tercapai (", InpMaxSteps, "). Reset.");
-         g_martingaleStep = 0;
+         if(InpStopOnMaxStep)
+            Print("GT: Max step tercapai (", InpMaxSteps, "). Entry dihentikan sampai profit.");
+         else
+         {
+            g_martingaleStep = 0;
+            Print("GT: Max step tercapai (", InpMaxSteps, "). Reset.");
+         }
       }
       else
          Print("GT: Loss. Step naik ke ", g_martingaleStep);
-   }
-}
-
-//+------------------------------------------------------------------+
-//| [10] Close All Positions                                         |
-//+------------------------------------------------------------------+
-void CloseAllPositions(bool pos, bool pend)
-{
-   if(pos)
-   {
-      for(int i = PositionsTotal() - 1; i >= 0; i--)
-      {
-         ulong ticket = PositionGetTicket(i);
-         if(PositionSelectByTicket(ticket))
-            if(PositionGetString(POSITION_SYMBOL) == _Symbol &&
-               PositionGetInteger(POSITION_MAGIC) == (long)InpMagic)
-               trade.PositionClose(ticket);
-      }
-   }
-   if(pend)
-   {
-      for(int i = OrdersTotal() - 1; i >= 0; i--)
-      {
-         ulong ticket = OrderGetTicket(i);
-         if(OrderSelect(ticket))
-            if(OrderGetString(ORDER_SYMBOL) == _Symbol &&
-               OrderGetInteger(ORDER_MAGIC) == (long)InpMagic)
-               trade.OrderDelete(ticket);
-      }
    }
 }
 //+------------------------------------------------------------------+

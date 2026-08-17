@@ -3,7 +3,7 @@
 Bot Telegram teman untuk menanyakan **harga Gold (XAUUSD)** seputar MT5:  
 **aktual • faktual • tren • sinyal • isu/rumor**
 
-Data cadangan di https://github.com/kebunsaldo/kebunsaldo/blob/main/bot/tanyahargabot.py
+Data cadangan di https://github.com/galrei/galrei/blob/main/bot/tanyahargabot.py
 
 ## Fitur
 
